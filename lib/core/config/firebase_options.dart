@@ -56,8 +56,8 @@ class DefaultFirebaseOptions {
         apiKey: AppConfig.firebaseApiKey.isNotEmpty
             ? AppConfig.firebaseApiKey
             : 'AIzaSyDemoApiKeyForBloodBridgeAndroid123',
-        appId: AppConfig.firebaseAppId.isNotEmpty
-            ? AppConfig.firebaseAppId
+        appId: AppConfig.firebaseAndroidAppId.isNotEmpty
+            ? AppConfig.firebaseAndroidAppId
             : '1:123456789012:android:demo1234567890',
         messagingSenderId: AppConfig.firebaseMessagingSenderId.isNotEmpty
             ? AppConfig.firebaseMessagingSenderId

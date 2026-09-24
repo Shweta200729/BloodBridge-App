@@ -88,13 +88,17 @@ class BloodRequestCard extends StatelessWidget {
               const Icon(Icons.location_on_outlined,
                   size: 16, color: AppColors.textSecondary),
               const SizedBox(width: 4),
-              Text(
-                distance,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: AppColors.textSecondary,
+              Expanded(
+                child: Text(
+                  distance,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryRed,

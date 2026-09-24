@@ -50,4 +50,14 @@ class AppTypography {
         fontSize: 18,
         fontWeight: FontWeight.w800,
       );
+
+  static TextStyle get bodySmall => GoogleFonts.inter(
+        fontSize: 12,
+        fontWeight: FontWeight.normal,
+      );
+
+  static TextStyle get titleSmall => GoogleFonts.outfit(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+      );
 }

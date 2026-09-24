@@ -1,0 +1,113 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ── Users Collection ───────────────────────────────────────────────
+    match /users/{userId} {
+      // Authenticated users can search and view donor profiles
+      allow read: if isAuthenticated();
+
+      // Users can only create or update their own profile document
+      allow create: if isOwner(userId)
+                    && request.resource.data.uid == userId;
+
+      allow update: if isOwner(userId)
+                    && request.resource.data.uid == userId;
+
+      allow delete: if isOwner(userId);
+
+      // ── Notifications Subcollection ──────────────────────────────────
+      match /notifications/{notifId} {
+        // Users can only read their own notifications
+        allow read: if isOwner(userId);
+
+        // Any authenticated user can write a notification to another user
+        // (needed for client-side fan-out when Cloud Functions are unavailable)
+        allow create: if isAuthenticated();
+
+        // Only the notification owner can update (e.g. mark as read)
+        allow update: if isOwner(userId);
+
+        // Notifications are never hard-deleted
+        allow delete: if false;
+      }
+    }
+
+    // ── Emergency Requests Collection ──────────────────────────────────
+    match /emergency_requests/{requestId} {
+      // Any authenticated user can read emergency requests (active feed & details)
+      allow read: if isAuthenticated();
+
+      // Only authenticated users can create requests, and requesterUid must match
+      allow create: if isAuthenticated()
+                    && request.resource.data.requesterUid == request.auth.uid
+                    && request.resource.data.status == 'open'
+                    && request.resource.data.units >= 1
+                    && request.resource.data.units <= 20
+                    && request.resource.data.hospitalName is string
+                    && request.resource.data.hospitalName.size() > 0
+                    && request.resource.data.city is string
+                    && request.resource.data.city.size() > 0
+                    && request.resource.data.contactPhone is string
+                    && request.resource.data.contactPhone.size() > 0
+                    && request.resource.data.bloodGroup in ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+      // Only the original requester can update their request (e.g., mark fulfilled or cancel)
+      // or update active donor response count during coordination
+      allow update: if isAuthenticated()
+                    && (
+                      // Requester updating status or details
+                      (resource.data.requesterUid == request.auth.uid
+                       && request.resource.data.requesterUid == resource.data.requesterUid
+                       && request.resource.data.createdAt == resource.data.createdAt)
+                      // Or donor updating response count via transaction
+                      || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['responseCount', 'updatedAt']))
+                    );
+
+      // Requests should not be deleted to maintain audit trail; soft-cancel instead
+      allow delete: if false;
+
+      // ── Donor Responses Subcollection ──────────────────────────────
+      match /responses/{responseId} {
+        // Authenticated users can view responses for this request
+        allow read: if isAuthenticated();
+
+        // Donors can respond: must be authenticated, cannot be requester,
+        // response ID must be deterministic {requestId}_{donorUid}
+        allow create: if isAuthenticated()
+                      && request.resource.data.donorUid == request.auth.uid
+                      && request.resource.data.requestId == requestId
+                      && responseId == (requestId + '_' + request.auth.uid)
+                      && request.resource.data.status == 'active'
+                      && request.auth.uid != get(/databases/$(database)/documents/emergency_requests/$(requestId)).data.requesterUid;
+
+        // Donors can only update their own response (e.g., withdraw)
+        allow update: if isAuthenticated()
+                      && resource.data.donorUid == request.auth.uid
+                      && request.resource.data.donorUid == resource.data.donorUid
+                      && request.resource.data.requestId == resource.data.requestId;
+
+        // Responses should not be hard-deleted; withdraw instead
+        allow delete: if false;
+      }
+    }
+
+    // ── Hospitals & Blood Banks Collection ──────────────────────────────
+    match /hospitals/{hospitalId} {
+      // Authenticated users can view official hospital and blood bank listings
+      allow read: if isAuthenticated();
+
+      // Only administrators can manage hospital entries; ordinary clients cannot write
+      allow write: if false;
+    }
+  }
+}

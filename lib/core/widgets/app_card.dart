@@ -33,14 +33,19 @@ class AppCard extends StatelessWidget {
         );
 
     final widgetContent = Container(
-      padding: padding ?? const EdgeInsets.all(AppDimensions.spaceMD),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: AppDimensions.borderRadiusLG,
         border: cardBorder,
         boxShadow: boxShadow ?? AppColors.softShadow,
       ),
-      child: child,
+      child: Material(
+        color: Colors.transparent,
+        child: Padding(
+          padding: padding ?? const EdgeInsets.all(AppDimensions.spaceMD),
+          child: child,
+        ),
+      ),
     );
 
     if (onTap != null) {

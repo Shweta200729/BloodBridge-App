@@ -37,6 +37,9 @@ class AppConfig {
   static String get firebaseAppId =>
       dotenv.get('FIREBASE_APP_ID', fallback: '');
 
+  static String get firebaseAndroidAppId =>
+      dotenv.get('FIREBASE_ANDROID_APP_ID', fallback: firebaseAppId);
+
   static bool get isDev => _environment == Environment.development;
   static bool get isProd => _environment == Environment.production;
 }

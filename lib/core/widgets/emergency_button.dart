@@ -64,15 +64,22 @@ class _EmergencyButtonState extends State<EmergencyButton>
           onPressed: widget.onPressed,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.warning_amber_rounded, size: AppDimensions.iconLG),
               const SizedBox(width: AppDimensions.spaceSM),
-              Text(
-                widget.label,
-                style: AppTypography.titleMedium.copyWith(
-                  color: Colors.white,
-                  letterSpacing: 0.8,
-                  fontWeight: FontWeight.bold,
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    widget.label,
+                    maxLines: 1,
+                    style: AppTypography.titleMedium.copyWith(
+                      color: Colors.white,
+                      letterSpacing: 0.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ],

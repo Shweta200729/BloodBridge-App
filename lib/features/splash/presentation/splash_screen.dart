@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
@@ -93,10 +94,19 @@ class _SplashScreenState extends State<SplashScreen>
       }
     });
 
-    // Smooth navigation transition after splash sequence
+    // Smooth navigation transition after splash sequence based on auth state
     Future.delayed(const Duration(seconds: 3, milliseconds: 500), () {
       if (mounted) {
-        context.go(RouteNames.loginPath);
+        try {
+          final currentUser = FirebaseAuth.instance.currentUser;
+          if (currentUser != null) {
+            context.go(RouteNames.homePath);
+          } else {
+            context.go(RouteNames.loginPath);
+          }
+        } catch (_) {
+          context.go(RouteNames.loginPath);
+        }
       }
     });
   }

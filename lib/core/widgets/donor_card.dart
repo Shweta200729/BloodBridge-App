@@ -9,8 +9,9 @@ import 'status_chip.dart';
 class DonorCard extends StatelessWidget {
   final String name;
   final String bloodType;
-  final String distance;
-  final String lastDonated;
+  final String? subtitle;
+  final String? distance;
+  final String? lastDonated;
   final bool isVerified;
   final bool isAvailable;
   final VoidCallback? onCallPressed;
@@ -20,13 +21,31 @@ class DonorCard extends StatelessWidget {
     super.key,
     required this.name,
     required this.bloodType,
-    required this.distance,
-    required this.lastDonated,
-    this.isVerified = true,
+    this.subtitle,
+    this.distance,
+    this.lastDonated,
+    this.isVerified = false,
     this.isAvailable = true,
     this.onCallPressed,
     this.onTap,
   });
+
+  String get _resolvedSubtitle {
+    if (subtitle != null && subtitle!.isNotEmpty) {
+      return subtitle!;
+    }
+    final List<String> parts = [];
+    if (lastDonated != null && lastDonated!.isNotEmpty) {
+      parts.add('Last donated: $lastDonated');
+    }
+    if (distance != null && distance!.isNotEmpty) {
+      parts.add(distance!);
+    }
+    if (parts.isEmpty) {
+      return isAvailable ? 'Available donor' : 'Unavailable';
+    }
+    return parts.join(' • ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +54,7 @@ class DonorCard extends StatelessWidget {
       child: Row(
         children: [
           BloodTypeBadge(
-            bloodType: bloodType,
+            bloodType: bloodType.isNotEmpty ? bloodType : 'O+',
             size: BloodBadgeSize.medium,
             isSelected: true,
           ),
@@ -48,7 +67,7 @@ class DonorCard extends StatelessWidget {
                   children: [
                     Flexible(
                       child: Text(
-                        name,
+                        name.isNotEmpty ? name : 'Anonymous Donor',
                         style: AppTypography.titleMedium,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -64,10 +83,11 @@ class DonorCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Last donated: $lastDonated • $distance',
+                  _resolvedSubtitle,
                   style: AppTypography.bodyMedium.copyWith(
                     color: AppColors.textSecondary,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
