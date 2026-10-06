@@ -264,6 +264,41 @@ class MessagingService {
     }
   }
 
+  /// Writes a notification to the donor informing them that the hospital has selected them.
+  Future<void> notifyDonorSelected({
+    required String donorUid,
+    required String requestId,
+    required String hospitalName,
+    required String bloodGroup,
+    String hospitalPhone = '',
+    String city = '',
+  }) async {
+    try {
+      final notifRef = _db
+          .collection(FirebaseCollections.users)
+          .doc(donorUid)
+          .collection(FirebaseCollections.notifications)
+          .doc();
+      await notifRef.set({
+        'type': 'donor_selected',
+        'requestId': requestId,
+        'hospitalName': hospitalName,
+        'bloodGroup': bloodGroup,
+        'hospitalPhone': hospitalPhone,
+        'city': city,
+        'title': '🎉 You were selected by $hospitalName!',
+        'body': 'Your willingness to donate $bloodGroup has been selected by $hospitalName. Tap to view coordination instructions.',
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      if (kDebugMode) {
+        print('[FCM] Notified donor $donorUid of hospital selection');
+      }
+    } catch (e) {
+      if (kDebugMode) print('[FCM] Donor selection notification error: $e');
+    }
+  }
+
   // ── Listen to in-app notifications ──────────────────────────────────────────
 
   /// Streams unread notification documents from the current user's subcollection.

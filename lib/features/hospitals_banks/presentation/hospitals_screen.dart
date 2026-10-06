@@ -30,8 +30,8 @@ class _HospitalsScreenState extends ConsumerState<HospitalsScreen> {
   HospitalModel? _selectedMapHospital;
   bool _isLocating = false;
 
-  // Default fallback center (Central India / National overview)
-  static const LatLng _defaultCenter = LatLng(20.5937, 78.9629);
+  // Default fallback center (Palghar District, Maharashtra)
+  static const LatLng _defaultCenter = LatLng(19.6967, 72.7699);
 
   @override
   void initState() {
@@ -397,7 +397,7 @@ class _HospitalsScreenState extends ConsumerState<HospitalsScreen> {
           mapController: _mapController,
           options: MapOptions(
             initialCenter: initialCenter,
-            initialZoom: userPos != null ? 11.0 : 6.0,
+            initialZoom: userPos != null ? 12.0 : 12.5,
             interactionOptions: const InteractionOptions(
               flags: InteractiveFlag.all,
             ),

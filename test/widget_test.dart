@@ -1,5 +1,6 @@
 import 'package:blood_bridge/app.dart';
 import 'package:blood_bridge/core/services/auth_service.dart';
+import 'package:blood_bridge/core/services/messaging_service.dart';
 import 'package:blood_bridge/core/services/storage_preference_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +15,18 @@ class MockFirebaseAuth extends Fake implements FirebaseAuth {
   Stream<User?> authStateChanges() => Stream.value(null);
 }
 
+class FakeMessagingService extends Fake implements MessagingService {
+  @override
+  Future<void> initNotifications({
+    void Function(String requestId)? onNotificationTap,
+  }) async {}
+
+  @override
+  Stream<List<Map<String, dynamic>>> listenForMyNotifications(String uid) {
+    return Stream.value([]);
+  }
+}
+
 void main() {
   testWidgets('BloodBridge splash screen renders successfully', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -24,6 +37,7 @@ void main() {
         overrides: [
           sharedPreferencesProvider.overrideWithValue(sharedPreferences),
           firebaseAuthProvider.overrideWithValue(MockFirebaseAuth()),
+          messagingServiceProvider.overrideWithValue(FakeMessagingService()),
         ],
         child: const BloodBridgeApp(),
       ),

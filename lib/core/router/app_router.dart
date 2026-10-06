@@ -13,6 +13,7 @@ import '../../features/hospitals_banks/presentation/hospitals_screen.dart';
 import '../../features/navigation/presentation/main_navigation_shell.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/splash/presentation/splash_screen.dart';
+import '../models/emergency_request_model.dart';
 import '../services/auth_service.dart';
 import 'route_names.dart';
 
@@ -94,7 +95,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: RouteNames.requestDetail,
         builder: (context, state) {
           final requestId = state.pathParameters['requestId'] ?? '';
-          return RequestDetailScreen(requestId: requestId);
+          final initialRequest = state.extra is EmergencyRequestModel
+              ? state.extra as EmergencyRequestModel
+              : null;
+          return RequestDetailScreen(
+            requestId: requestId,
+            initialRequest: initialRequest,
+          );
         },
       ),
 

@@ -2,13 +2,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Status of a donor's response to an emergency request.
 /// 'active' = donor has offered to help and has not withdrawn.
+/// 'selected' = hospital has selected this donor for coordination.
 /// 'withdrawn' = donor withdrew their offer.
 enum DonorResponseStatus {
   active,
+  selected,
   withdrawn;
 
   static DonorResponseStatus fromString(String? value) {
     switch (value) {
+      case 'selected':
+        return DonorResponseStatus.selected;
       case 'withdrawn':
         return DonorResponseStatus.withdrawn;
       case 'active':
@@ -16,6 +20,10 @@ enum DonorResponseStatus {
         return DonorResponseStatus.active;
     }
   }
+
+  bool get isSelected => this == DonorResponseStatus.selected;
+  bool get isActiveOrSelected =>
+      this == DonorResponseStatus.active || this == DonorResponseStatus.selected;
 }
 
 /// A donor's willingness to coordinate for a specific emergency request.

@@ -84,6 +84,96 @@ class AuthService {
     }
   }
 
+  Future<UserCredential> registerHospitalWithEmailAndPassword({
+    required String email,
+    required String password,
+    required String hospitalName,
+    required String phone,
+    required String city,
+    required String address,
+    String? licenseNumber,
+  }) async {
+    try {
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+
+      final user = credential.user;
+      if (user != null) {
+        await user.updateDisplayName(hospitalName.trim());
+
+        final userModel = UserModel(
+          uid: user.uid,
+          fullName: hospitalName.trim(),
+          hospitalName: hospitalName.trim(),
+          email: email.trim().toLowerCase(),
+          phone: phone.trim(),
+          bloodGroup: 'N/A',
+          city: city.trim(),
+          address: address.trim(),
+          licenseNumber: licenseNumber?.trim(),
+          userType: 'hospital',
+          isDonorAvailable: false,
+          isVerified: true,
+          createdAt: DateTime.now(),
+          donationsCount: 0,
+          livesSaved: 0,
+        );
+
+        await _firestore.setData(
+          path: '${FirebaseCollections.users}/${user.uid}',
+          data: userModel.toMap(),
+        );
+      }
+
+      return credential;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<void> updateHospitalProfile({
+    required String uid,
+    required String hospitalName,
+    required String phone,
+    required String city,
+    required String address,
+    String? licenseNumber,
+  }) async {
+    final current = _auth.currentUser;
+    if (current == null || current.uid != uid) {
+      throw FirebaseAuthException(
+        code: 'permission-denied',
+        message: 'You can only update your own profile.',
+      );
+    }
+
+    final Map<String, dynamic> updateData = {
+      'fullName': hospitalName.trim(),
+      'hospitalName': hospitalName.trim(),
+      'phone': phone.trim(),
+      'city': city.trim(),
+      'address': address.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    if (licenseNumber != null) {
+      updateData['licenseNumber'] = licenseNumber.trim();
+    }
+
+    await _firestore.setData(
+      path: '${FirebaseCollections.users}/$uid',
+      data: updateData,
+      merge: true,
+    );
+
+    if (hospitalName.trim().isNotEmpty &&
+        current.displayName != hospitalName.trim()) {
+      await current.updateDisplayName(hospitalName.trim());
+    }
+  }
+
   Future<void> saveUserProfile(UserModel user) async {
     final current = _auth.currentUser;
     if (current == null || current.uid != user.uid) {
@@ -220,7 +310,7 @@ final authServiceProvider = Provider<AuthService>((ref) {
 
 final currentUserProfileProvider = StreamProvider<UserModel?>((ref) {
   final authState = ref.watch(authStateChangesProvider);
-  final user = authState.value;
+  final user = authState.valueOrNull;
   if (user == null) {
     return Stream.value(null);
   }
@@ -235,7 +325,7 @@ final currentUserProfileProvider = StreamProvider<UserModel?>((ref) {
       return null;
     }
     return UserModel.fromFirestore(snapshot);
-  });
+  }).handleError((_) => null);
 });
 
 final availableDonorsStreamProvider = StreamProvider<List<UserModel>>((ref) {
@@ -247,6 +337,7 @@ final availableDonorsStreamProvider = StreamProvider<List<UserModel>>((ref) {
       .map((snapshot) {
     return snapshot.docs
         .map((doc) => UserModel.fromFirestore(doc))
+        .where((user) => user.isDonor)
         .toList();
   });
 });

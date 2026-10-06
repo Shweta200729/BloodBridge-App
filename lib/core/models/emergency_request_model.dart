@@ -87,6 +87,8 @@ class EmergencyRequestModel {
   final RequestStatus status;
   final String? contactPhone;
   final String? patientCaseId;
+  final String? selectedDonorUid;
+  final String? selectedDonorName;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -101,6 +103,8 @@ class EmergencyRequestModel {
     this.status = RequestStatus.open,
     this.contactPhone,
     this.patientCaseId,
+    this.selectedDonorUid,
+    this.selectedDonorName,
     this.createdAt,
     this.updatedAt,
   });
@@ -136,6 +140,10 @@ class EmergencyRequestModel {
         'contactPhone': contactPhone!.trim(),
       if (patientCaseId != null && patientCaseId!.trim().isNotEmpty)
         'patientCaseId': patientCaseId!.trim(),
+      if (selectedDonorUid != null && selectedDonorUid!.trim().isNotEmpty)
+        'selectedDonorUid': selectedDonorUid!.trim(),
+      if (selectedDonorName != null && selectedDonorName!.trim().isNotEmpty)
+        'selectedDonorName': selectedDonorName!.trim(),
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -162,6 +170,8 @@ class EmergencyRequestModel {
       status: RequestStatus.fromString(map['status'] as String?),
       contactPhone: map['contactPhone'] as String?,
       patientCaseId: map['patientCaseId'] as String?,
+      selectedDonorUid: map['selectedDonorUid'] as String?,
+      selectedDonorName: map['selectedDonorName'] as String?,
       createdAt: parseTimestamp(map['createdAt']),
       updatedAt: parseTimestamp(map['updatedAt']),
     );
@@ -185,6 +195,8 @@ class EmergencyRequestModel {
     RequestStatus? status,
     String? contactPhone,
     String? patientCaseId,
+    String? selectedDonorUid,
+    String? selectedDonorName,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -199,6 +211,8 @@ class EmergencyRequestModel {
       status: status ?? this.status,
       contactPhone: contactPhone ?? this.contactPhone,
       patientCaseId: patientCaseId ?? this.patientCaseId,
+      selectedDonorUid: selectedDonorUid ?? this.selectedDonorUid,
+      selectedDonorName: selectedDonorName ?? this.selectedDonorName,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

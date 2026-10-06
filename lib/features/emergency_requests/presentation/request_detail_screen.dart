@@ -10,15 +10,21 @@ import '../../../core/services/auth_service.dart';
 import '../../../core/services/emergency_request_service.dart';
 import '../../../core/widgets/blood_type_badge.dart';
 import '../../../core/widgets/custom_app_bar.dart';
-import '../../../core/widgets/loading_widget.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/status_chip.dart';
+import '../../../core/models/hospital_model.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../hospitals_banks/presentation/widgets/hospital_details_sheet.dart';
 
 class RequestDetailScreen extends ConsumerStatefulWidget {
   final String requestId;
+  final EmergencyRequestModel? initialRequest;
 
-  const RequestDetailScreen({super.key, required this.requestId});
+  const RequestDetailScreen({
+    super.key,
+    required this.requestId,
+    this.initialRequest,
+  });
 
   @override
   ConsumerState<RequestDetailScreen> createState() =>
@@ -74,7 +80,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
     final confirmed = await _showConfirmDialog(
       title: 'Mark as Fulfilled',
       message:
-          'Mark this request as fulfilled? Only do this once the blood requirement has been met.',
+          'Mark this request as fulfilled? Only do this once the blood donation has been collected.',
       confirmLabel: 'Mark Fulfilled',
       confirmColor: AppColors.donorGreen,
     );
@@ -102,20 +108,57 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
     }
   }
 
+  Future<void> _selectDonor(DonorResponseModel response) async {
+    final confirmed = await _showConfirmDialog(
+      title: 'Select Donor',
+      message:
+          'Select ${response.donorName} (${response.donorBloodGroup}) as the primary donor for this emergency? They will receive an immediate in-app notification with hospital coordination details.',
+      confirmLabel: 'Confirm Selection',
+      confirmColor: AppColors.healthcareBlue,
+    );
+    if (!confirmed) return;
+
+    setState(() => _isActioning = true);
+    try {
+      final service = ref.read(emergencyRequestServiceProvider);
+      await service.selectDonor(
+        requestId: widget.requestId,
+        donorUid: response.donorUid,
+        donorName: response.donorName,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${response.donorName} selected! Notification sent to donor.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_errorMessage(e))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isActioning = false);
+    }
+  }
+
   Future<void> _respondToRequest(EmergencyRequestModel request) async {
-    final currentUser = ref.read(currentUserProfileProvider).value;
+    final currentUser = ref.read(currentUserProfileProvider).valueOrNull;
     if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please sign in to respond.')),
+        const SnackBar(content: Text('Please sign in to volunteer.')),
       );
       return;
     }
 
     final confirmed = await _showConfirmDialog(
-      title: 'Offer to Help',
+      title: 'Volunteer to Donate',
       message:
-          'By responding, you are expressing willingness to coordinate — not confirming medical eligibility or transfusion compatibility. A BloodBridge representative may contact you. Continue?',
-      confirmLabel: 'Yes, I Want to Help',
+          'By volunteering, you are joining the hospital\'s donor queue. If selected by ${request.hospitalName}, you will receive a notification to coordinate donation. Continue?',
+      confirmLabel: 'Join Donor Queue',
       confirmColor: AppColors.primaryRed,
     );
     if (!confirmed) return;
@@ -132,7 +175,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text(
-                  'Thank you! Your willingness to help has been recorded. The requester will be notified.')),
+                  'You joined the donor queue! The hospital will review and notify selected donors.')),
         );
       }
     } catch (e) {
@@ -149,7 +192,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
   Future<void> _withdrawResponse() async {
     final confirmed = await _showConfirmDialog(
       title: 'Withdraw Response',
-      message: 'Withdraw your offer to help with this request?',
+      message: 'Withdraw your volunteer application for this request?',
       confirmLabel: 'Withdraw',
       confirmColor: AppColors.warning,
     );
@@ -192,7 +235,10 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: confirmColor),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: confirmColor,
+              minimumSize: const Size(0, 36),
+            ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(confirmLabel,
                 style: const TextStyle(color: Colors.white)),
@@ -216,84 +262,269 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedReq = ref.watch(selectedEmergencyRequestProvider);
     final requestAsync =
         ref.watch(requestDetailProvider(widget.requestId));
     final responsesAsync =
         ref.watch(requestResponsesProvider(widget.requestId));
     final currentUid =
-        ref.watch(authStateChangesProvider).value?.uid;
+        ref.watch(authStateChangesProvider).valueOrNull?.uid;
+    final userProfile = ref.watch(currentUserProfileProvider).valueOrNull;
+    final isHospital = userProfile?.isHospital ?? false;
+
+    // Multi-tier fallback guarantees request data is immediately available
+    final EmergencyRequestModel? request = (selectedReq != null && (widget.requestId.isEmpty || selectedReq.id == widget.requestId) ? selectedReq : null)
+        ?? widget.initialRequest
+        ?? requestAsync.valueOrNull;
 
     return Scaffold(
       appBar: const CustomAppBar(
         title: 'Request Details',
         showBack: true,
       ),
-      body: requestAsync.when(
-        loading: () => const LoadingWidget(),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: AppDimensions.screenPadding,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline,
-                    size: 48, color: AppColors.error),
-                const SizedBox(height: AppDimensions.spaceMD),
-                Text(_errorMessage(e),
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMedium),
-                const SizedBox(height: AppDimensions.spaceMD),
-                ElevatedButton(
-                  onPressed: () => ref
-                      .refresh(requestDetailProvider(widget.requestId)),
-                  child: const Text('Retry'),
+      body: Builder(
+        builder: (context) {
+          try {
+            final currentRequest = request;
+          if (currentRequest == null) {
+            if (requestAsync.isLoading) {
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: AppColors.primaryRed),
+                    const SizedBox(height: AppDimensions.spaceMD),
+                    Text(
+                      'Loading request details...',
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-        ),
-        data: (request) {
-          if (request == null) {
-            return const Center(
-              child: Text('Request not found or has been removed.'),
+              );
+            }
+            if (requestAsync.hasError) {
+              return Center(
+                child: Padding(
+                  padding: AppDimensions.screenPadding,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline,
+                          size: 48, color: AppColors.error),
+                      const SizedBox(height: AppDimensions.spaceMD),
+                      Text(_errorMessage(requestAsync.error),
+                          textAlign: TextAlign.center,
+                          style: AppTypography.bodyMedium),
+                      const SizedBox(height: AppDimensions.spaceMD),
+                      ElevatedButton(
+                        onPressed: () => ref
+                            .refresh(requestDetailProvider(widget.requestId)),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return Center(
+              child: Padding(
+                padding: AppDimensions.screenPadding,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.search_off_rounded,
+                        size: 48, color: AppColors.textSecondary),
+                    const SizedBox(height: AppDimensions.spaceMD),
+                    Text(
+                      'Request not found or has been closed.',
+                      style: AppTypography.bodyMedium,
+                    ),
+                    const SizedBox(height: AppDimensions.spaceMD),
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Go Back'),
+                    ),
+                  ],
+                ),
+              ),
             );
           }
 
-          final isRequester = currentUid == request.requesterUid;
-          final isOpen = request.status.isActive;
+          final isRequester = currentUid != null && (
+            currentUid == currentRequest.requesterUid ||
+            (isHospital &&
+                userProfile?.hospitalName != null &&
+                userProfile!.hospitalName!.trim().toLowerCase() ==
+                    currentRequest.hospitalName.trim().toLowerCase())
+          );
+          final isOpen = currentRequest.status.isActive;
+          final isSelectedDonor =
+              currentUid != null && currentRequest.selectedDonorUid == currentUid;
 
           return SingleChildScrollView(
             padding: AppDimensions.screenPadding,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── Selected Donor Celebratory Banner (for chosen donor) ────
+                if (isSelectedDonor) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: AppDimensions.spaceMD),
+                    padding: const EdgeInsets.all(AppDimensions.spaceMD),
+                    decoration: BoxDecoration(
+                      color: AppColors.donorGreen.withValues(alpha: 0.1),
+                      borderRadius: AppDimensions.borderRadiusMD,
+                      border: Border.all(color: AppColors.donorGreen, width: 1.5),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.celebration_rounded,
+                                color: AppColors.donorGreen, size: 24),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'You are the Selected Donor!',
+                                style: AppTypography.titleMedium.copyWith(
+                                  color: AppColors.donorGreen,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${currentRequest.hospitalName} has selected you for this ${currentRequest.bloodGroup} blood requirement. Please coordinate directly with the hospital desk.',
+                          style: AppTypography.bodySmall,
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            if (currentRequest.contactPhone != null &&
+                                currentRequest.contactPhone!.isNotEmpty)
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.donorGreen,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(0, 38),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 8),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                        AppDimensions.radiusSM),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.phone_rounded, size: 16),
+                                label: Text(
+                                    'Call Hospital (${currentRequest.contactPhone})'),
+                                onPressed: () => HospitalDetailsSheet.launchCall(
+                                    context, currentRequest.contactPhone),
+                              ),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.healthcareBlue,
+                                side: const BorderSide(
+                                    color: AppColors.healthcareBlue),
+                                minimumSize: const Size(0, 38),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 8),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                      AppDimensions.radiusSM),
+                                ),
+                              ),
+                              icon: const Icon(Icons.directions_rounded, size: 16),
+                              label: const Text('Directions to Hospital'),
+                              onPressed: () =>
+                                  HospitalDetailsSheet.launchDirections(
+                                context,
+                                HospitalModel(
+                                  id: '',
+                                  name: currentRequest.hospitalName,
+                                  address: currentRequest.city,
+                                  city: currentRequest.city,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else if (currentRequest.selectedDonorUid != null && !isRequester) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: AppDimensions.spaceMD),
+                    padding: const EdgeInsets.all(AppDimensions.spaceMD),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceVariant,
+                      borderRadius: AppDimensions.borderRadiusMD,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle_outline,
+                            color: AppColors.donorGreen, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'A donor has been selected by ${currentRequest.hospitalName} for this emergency.',
+                            style: AppTypography.bodySmall.copyWith(
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 // ── Status + Blood Group Header ──────────────────────────
                 Row(
                   children: [
                     BloodTypeBadge(
-                      bloodType: request.bloodGroup,
+                      bloodType: currentRequest.bloodGroup,
                       size: BloodBadgeSize.large,
                       isSelected: true,
                       showUrgencyRing:
-                          request.urgency == UrgencyLevel.critical,
+                          currentRequest.urgency == UrgencyLevel.critical,
                     ),
                     const SizedBox(width: AppDimensions.spaceMD),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(request.hospitalName,
-                              style: AppTypography.titleLarge),
+                          Row(
+                            children: [
+                              const Icon(Icons.local_hospital_rounded,
+                                  size: 16, color: AppColors.healthcareBlue),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  currentRequest.hospitalName,
+                                  style: AppTypography.titleLarge,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                           const SizedBox(height: 4),
-                          Text(request.city,
+                          Text(currentRequest.city,
                               style: AppTypography.bodyMedium.copyWith(
                                   color: AppColors.textSecondary)),
                         ],
                       ),
                     ),
                     StatusChip(
-                      label: request.status.label,
-                      type: _statusTypeFor(request.status),
+                      label: currentRequest.status.label,
+                      type: _statusTypeFor(currentRequest.status),
                     ),
                   ],
                 ),
@@ -304,54 +535,62 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
                   _InfoRow(
                     icon: Icons.water_drop_outlined,
                     label: 'Units Required',
-                    value: '${request.units} unit${request.units > 1 ? 's' : ''}',
+                    value: '${currentRequest.units} unit${currentRequest.units > 1 ? 's' : ''}',
                   ),
                   _InfoRow(
                     icon: Icons.warning_amber_rounded,
                     label: 'Urgency',
-                    value: request.urgency.label,
-                    valueColor: request.urgency == UrgencyLevel.critical
+                    value: currentRequest.urgency.label,
+                    valueColor: currentRequest.urgency == UrgencyLevel.critical
                         ? AppColors.emergencyRed
-                        : request.urgency == UrgencyLevel.urgent
+                        : currentRequest.urgency == UrgencyLevel.urgent
                             ? AppColors.warning
                             : AppColors.textPrimary,
                   ),
-                  if (request.patientCaseId != null &&
-                      request.patientCaseId!.isNotEmpty)
+                  if (currentRequest.patientCaseId != null &&
+                      currentRequest.patientCaseId!.isNotEmpty)
                     _InfoRow(
                       icon: Icons.badge_outlined,
-                      label: 'Case ID',
-                      value: request.patientCaseId!,
+                      label: 'Case ID / Reference',
+                      value: currentRequest.patientCaseId!,
+                    ),
+                  if (currentRequest.selectedDonorName != null &&
+                      currentRequest.selectedDonorName!.isNotEmpty)
+                    _InfoRow(
+                      icon: Icons.person_pin_rounded,
+                      label: 'Selected Donor',
+                      value: currentRequest.selectedDonorName!,
+                      valueColor: AppColors.donorGreen,
                     ),
                   _InfoRow(
                     icon: Icons.calendar_today_outlined,
-                    label: 'Posted',
-                    value: _formatDate(request.createdAt),
+                    label: 'Broadcast Posted',
+                    value: _formatDate(currentRequest.createdAt),
                   ),
-                  if (request.updatedAt != null &&
-                      request.updatedAt != request.createdAt)
+                  if (currentRequest.updatedAt != null &&
+                      currentRequest.updatedAt != currentRequest.createdAt)
                     _InfoRow(
                       icon: Icons.update_outlined,
                       label: 'Last Updated',
-                      value: _formatDate(request.updatedAt),
+                      value: _formatDate(currentRequest.updatedAt),
                     ),
                 ]),
 
-                // ── Contact info (only if requester OR responding donor) ──
-                if (request.contactPhone != null &&
-                    request.contactPhone!.isNotEmpty) ...[
+                // ── Contact info (Emergency Desk Helpline) ───────────────
+                if (currentRequest.contactPhone != null &&
+                    currentRequest.contactPhone!.isNotEmpty) ...[
                   const SizedBox(height: AppDimensions.spaceMD),
                   _InfoCard(children: [
                     _InfoRow(
                       icon: Icons.phone_outlined,
-                      label: 'Emergency Contact',
-                      value: request.contactPhone!,
+                      label: 'Hospital Emergency Helpline',
+                      value: currentRequest.contactPhone!,
                       onTap: () {
                         Clipboard.setData(
-                            ClipboardData(text: request.contactPhone!));
+                            ClipboardData(text: currentRequest.contactPhone!));
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                              content: Text('Phone number copied.')),
+                              content: Text('Helpline phone copied.')),
                         );
                       },
                       trailingIcon: Icons.copy_outlined,
@@ -377,7 +616,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'BloodBridge does not determine medical eligibility, transfusion compatibility, or guarantee fulfillment. Always consult qualified medical personnel before donation.',
+                          'Emergency requests are clinical broadcasts initiated by hospitals. Volunteer donors must meet hospital clinical donor criteria prior to transfusion.',
                           style: AppTypography.bodySmall.copyWith(
                             color: AppColors.warning,
                           ),
@@ -387,15 +626,58 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
                   ),
                 ),
 
-                // ── Donor Responses ───────────────────────────────────────
+                // ── Donor Queue & Responses Section ───────────────────────
                 if (isRequester || isOpen) ...[
                   const SizedBox(height: AppDimensions.spaceXL),
-                  Text('Donor Responses', style: AppTypography.titleMedium),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        isRequester
+                            ? 'Volunteer Donor Queue'
+                            : 'Registered Volunteers',
+                        style: AppTypography.titleMedium,
+                      ),
+                      if (isRequester)
+                        Text(
+                          'Select 1 donor for coordination',
+                          style: AppTypography.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                    ],
+                  ),
                   const SizedBox(height: AppDimensions.spaceSM),
                   responsesAsync.when(
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Text('Could not load responses: ${_errorMessage(e)}'),
+                    loading: () => Container(
+                      padding: const EdgeInsets.all(AppDimensions.spaceLG),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceVariant,
+                        borderRadius: AppDimensions.borderRadiusMD,
+                      ),
+                      child: const Center(
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    ),
+                    error: (e, _) => Container(
+                      padding: const EdgeInsets.all(AppDimensions.spaceMD),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceVariant,
+                        borderRadius: AppDimensions.borderRadiusMD,
+                      ),
+                      child: Center(
+                        child: Text(
+                          'No queue entries currently available.',
+                          style: AppTypography.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
                     data: (responses) {
                       if (responses.isEmpty) {
                         return Container(
@@ -405,13 +687,24 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
                             borderRadius: AppDimensions.borderRadiusMD,
                           ),
                           child: const Center(
-                            child: Text('No donors have responded yet.'),
+                            child: Text(
+                                'No donors in queue yet. Available donors are being notified.'),
                           ),
                         );
                       }
                       return Column(
                         children: responses
-                            .map((r) => _ResponseTile(response: r))
+                            .map(
+                              (r) => _ResponseTile(
+                                response: r,
+                                isRequester: isRequester,
+                                isOpen: isOpen,
+                                isSelectedDonor:
+                                    r.donorUid == currentRequest.selectedDonorUid ||
+                                        r.status == DonorResponseStatus.selected,
+                                onSelectDonor: () => _selectDonor(r),
+                              ),
+                            )
                             .toList(),
                       );
                     },
@@ -431,7 +724,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
                   ),
                   const SizedBox(height: AppDimensions.spaceMD),
                   PrimaryButton(
-                    label: 'Cancel Request',
+                    label: 'Cancel SOS Request',
                     backgroundColor: AppColors.emergencyRed,
                     isLoading: _isActioning,
                     onPressed: _cancelRequest,
@@ -441,10 +734,10 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
                   // Donor respond/withdraw
                   _DonorActionSection(
                     requestId: widget.requestId,
-                    request: request,
+                    request: currentRequest,
                     currentUid: currentUid,
                     isActioning: _isActioning,
-                    onRespond: () => _respondToRequest(request),
+                    onRespond: () => _respondToRequest(currentRequest),
                     onWithdraw: _withdrawResponse,
                   ),
                 ],
@@ -453,9 +746,35 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
               ],
             ),
           );
-        },
-      ),
-    );
+        } catch (e, stack) {
+          debugPrint('Error building RequestDetailScreen: $e\n$stack');
+          return Center(
+            child: Padding(
+              padding: AppDimensions.screenPadding,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline_rounded,
+                      size: 48, color: AppColors.error),
+                  const SizedBox(height: AppDimensions.spaceMD),
+                  Text(
+                    'Could not display request details: $e',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMedium,
+                  ),
+                  const SizedBox(height: AppDimensions.spaceMD),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Go Back'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+      },
+    ),
+  );
   }
 }
 
@@ -467,6 +786,7 @@ class _InfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (children.isEmpty) return const SizedBox.shrink();
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surfaceWhite,
@@ -515,10 +835,14 @@ class _InfoRow extends StatelessWidget {
           children: [
             Icon(icon, size: 18, color: AppColors.textSecondary),
             const SizedBox(width: 12),
-            Text(label,
+            Expanded(
+              child: Text(
+                label,
                 style: AppTypography.bodyMedium
-                    .copyWith(color: AppColors.textSecondary)),
-            const Spacer(),
+                    .copyWith(color: AppColors.textSecondary),
+              ),
+            ),
+            const SizedBox(width: 8),
             Text(
               value,
               style: AppTypography.bodyMedium.copyWith(
@@ -539,7 +863,18 @@ class _InfoRow extends StatelessWidget {
 
 class _ResponseTile extends StatelessWidget {
   final DonorResponseModel response;
-  const _ResponseTile({required this.response});
+  final bool isRequester;
+  final bool isOpen;
+  final bool isSelectedDonor;
+  final VoidCallback onSelectDonor;
+
+  const _ResponseTile({
+    required this.response,
+    required this.isRequester,
+    required this.isOpen,
+    required this.isSelectedDonor,
+    required this.onSelectDonor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -547,19 +882,26 @@ class _ResponseTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: AppDimensions.spaceSM),
       padding: const EdgeInsets.all(AppDimensions.spaceMD),
       decoration: BoxDecoration(
-        color: AppColors.surfaceWhite,
+        color: isSelectedDonor
+            ? AppColors.donorGreen.withValues(alpha: 0.05)
+            : AppColors.surfaceWhite,
         borderRadius: AppDimensions.borderRadiusMD,
-        border: Border.all(color: AppColors.borderLight),
+        border: Border.all(
+          color: isSelectedDonor ? AppColors.donorGreen : AppColors.borderLight,
+          width: isSelectedDonor ? 1.5 : 1.0,
+        ),
       ),
       child: Row(
         children: [
           CircleAvatar(
             radius: 20,
-            backgroundColor: AppColors.primaryRed.withValues(alpha: 0.12),
+            backgroundColor: isSelectedDonor
+                ? AppColors.donorGreen.withValues(alpha: 0.15)
+                : AppColors.primaryRed.withValues(alpha: 0.12),
             child: Text(
               response.donorBloodGroup,
               style: AppTypography.labelMedium.copyWith(
-                color: AppColors.primaryRed,
+                color: isSelectedDonor ? AppColors.donorGreen : AppColors.primaryRed,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -569,21 +911,72 @@ class _ResponseTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(response.donorName,
-                    style: AppTypography.titleSmall),
+                Text(response.donorName, style: AppTypography.titleSmall),
                 Text(
-                  'Offered to coordinate',
+                  isSelectedDonor
+                      ? 'Selected by Hospital Desk'
+                      : 'In Volunteer Queue',
                   style: AppTypography.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
+                    color: isSelectedDonor
+                        ? AppColors.donorGreen
+                        : AppColors.textSecondary,
+                    fontWeight: isSelectedDonor
+                        ? FontWeight.w600
+                        : FontWeight.normal,
                   ),
                 ),
               ],
             ),
           ),
-          const StatusChip(
-            label: 'Willing',
-            type: StatusType.available,
-          ),
+          if (isSelectedDonor) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.donorGreen.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.donorGreen),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_circle_rounded,
+                      size: 14, color: AppColors.donorGreen),
+                  SizedBox(width: 4),
+                  Text(
+                    'Selected',
+                    style: TextStyle(
+                      color: AppColors.donorGreen,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (isRequester && isOpen) ...[
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.healthcareBlue,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(0, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppDimensions.radiusSM),
+                ),
+              ),
+              onPressed: onSelectDonor,
+              child: const Text(
+                'Select Donor',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ] else ...[
+            const StatusChip(
+              label: 'In Queue',
+              type: StatusType.available,
+            ),
+          ],
         ],
       ),
     );
@@ -654,12 +1047,52 @@ class _DonorActionSectionState extends ConsumerState<_DonorActionSection> {
           child: CircularProgressIndicator(strokeWidth: 2));
     }
 
-    final hasActiveResponse =
-        _myResponse?.status == DonorResponseStatus.active;
+    final hasActiveOrSelectedResponse =
+        _myResponse?.status.isActiveOrSelected == true;
 
-    if (hasActiveResponse) {
+    if (hasActiveOrSelectedResponse) {
+      final isSelected =
+          _myResponse?.status == DonorResponseStatus.selected;
+
+      if (isSelected) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppDimensions.spaceMD),
+          decoration: BoxDecoration(
+            color: AppColors.donorGreen.withValues(alpha: 0.1),
+            borderRadius: AppDimensions.borderRadiusMD,
+            border: Border.all(color: AppColors.donorGreen),
+          ),
+          child: Column(
+            children: [
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_circle_rounded,
+                      color: AppColors.donorGreen, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'You are selected for this donation',
+                    style: TextStyle(
+                      color: AppColors.donorGreen,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Please coordinate with the hospital medical staff.',
+                style: AppTypography.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        );
+      }
+
       return PrimaryButton(
-        label: 'Withdraw My Response',
+        label: 'Withdraw My Application',
         backgroundColor: AppColors.warning,
         isLoading: widget.isActioning,
         onPressed: widget.onWithdraw,
@@ -668,7 +1101,7 @@ class _DonorActionSectionState extends ConsumerState<_DonorActionSection> {
     }
 
     return PrimaryButton(
-      label: 'Offer to Help',
+      label: 'Volunteer to Donate (Join Queue)',
       backgroundColor: AppColors.primaryRed,
       isLoading: widget.isActioning,
       onPressed: widget.onRespond,

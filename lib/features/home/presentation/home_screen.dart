@@ -8,13 +8,17 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/router/route_names.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/emergency_request_service.dart';
+import '../../../core/services/hospital_service.dart';
 import '../../../core/services/messaging_service.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/widgets/accepted_assignment_card.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/blood_request_card.dart';
 import '../../../core/widgets/custom_app_bar.dart';
 import '../../../core/widgets/emergency_button.dart';
+import '../../../core/widgets/hospital_card.dart';
 import '../../../core/widgets/stat_card.dart';
+import '../../hospitals_banks/presentation/widgets/hospital_details_sheet.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -22,20 +26,32 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userAsync = ref.watch(currentUserProfileProvider);
-    final openRequestsAsync = ref.watch(openRequestsProvider(null));
+    final user = userAsync.valueOrNull;
+    final isHospital = user?.isHospital == true;
+
+    // Hospitals only see their own requests; Donors see open requests from all hospitals
+    final requestsAsync = isHospital
+        ? ref.watch(myRequestsProvider)
+        : ref.watch(openRequestsProvider(null));
 
     // Only listen to notifications if user is logged in
-    final uid = userAsync.value?.uid;
+    final uid = user?.uid;
     final notificationsAsync = uid != null
         ? ref.watch(myNotificationsProvider(uid))
         : const AsyncValue<List<Map<String, dynamic>>>.data([]);
 
-    final unreadCount = notificationsAsync.value?.length ?? 0;
+    final unreadCount = notificationsAsync.valueOrNull?.length ?? 0;
+    final hospitalsAsync = isHospital ? null : ref.watch(hospitalsStreamProvider);
+    final userPos = isHospital ? null : ref.watch(userLocationProvider);
+    final acceptedRequestsAsync =
+        isHospital ? null : ref.watch(myAcceptedRequestsProvider);
 
     return Scaffold(
       appBar: CustomAppBar(
         title: AppStrings.appName,
-        subtitle: 'Every Drop Saves Lives',
+        subtitle: isHospital
+            ? (user?.hospitalName ?? 'Hospital Emergency Portal')
+            : 'Every Drop Saves Lives',
         actions: [
           Stack(
             children: [
@@ -76,69 +92,107 @@ class HomeScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // High Visibility Emergency SOS Button
+            // Dynamic Action Button based on Role
             EmergencyButton(
-              onPressed: () => context.push(RouteNames.createRequestPath),
+              label: isHospital
+                  ? 'BROADCAST HOSPITAL SOS REQUEST'
+                  : 'VIEW EMERGENCY BLOOD REQUESTS',
+              onPressed: () {
+                if (isHospital) {
+                  context.push(RouteNames.createRequestPath);
+                } else {
+                  context.go(RouteNames.requestsPath);
+                }
+              },
             ),
             const SizedBox(height: AppDimensions.spaceLG),
 
-            // Live Statistics
-            Text('Live Impact & Network', style: AppTypography.titleMedium),
+            // ── Accepted Donor Assignment Banner (Shows when hospital selected this donor) ──
+            if (!isHospital && acceptedRequestsAsync != null)
+              acceptedRequestsAsync.when(
+                data: (acceptedList) {
+                  if (acceptedList.isEmpty) return const SizedBox.shrink();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.check_circle_rounded,
+                              color: AppColors.donorGreen, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Your Accepted Assignment',
+                            style: AppTypography.titleMedium.copyWith(
+                              color: AppColors.donorGreen,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppDimensions.spaceSM),
+                      ...acceptedList.map((req) => AcceptedAssignmentCard(request: req)),
+                      const SizedBox(height: AppDimensions.spaceMD),
+                    ],
+                  );
+                },
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              ),
+
+            // Statistics Section
+            Text(
+              isHospital ? 'Broadcast Overview' : 'Live Impact & Network',
+              style: AppTypography.titleMedium,
+            ),
             const SizedBox(height: AppDimensions.spaceSM),
-            openRequestsAsync.when(
+            requestsAsync.when(
               data: (requests) => Row(
                 children: [
                   Expanded(
                     child: StatCard(
-                      title: 'Open Requests',
+                      title: isHospital ? 'Active Broadcasts' : 'Open Requests',
                       value: '${requests.length}',
-                      icon: AppIcons.requests,
+                      icon: isHospital
+                          ? Icons.campaign_rounded
+                          : AppIcons.requests,
                       color: AppColors.emergencyRed,
                     ),
                   ),
                   const SizedBox(width: AppDimensions.spaceMD),
                   Expanded(
-                    child: userAsync.when(
-                      data: (user) => StatCard(
-                        title: 'My Donations',
-                        value: '${user?.donationsCount ?? 0}',
-                        icon: AppIcons.donor,
-                        color: AppColors.donorGreen,
-                      ),
-                      loading: () => const StatCard(
-                        title: 'My Donations',
-                        value: '—',
-                        icon: AppIcons.donor,
-                        color: AppColors.donorGreen,
-                      ),
-                      error: (_, __) => const StatCard(
-                        title: 'My Donations',
-                        value: '—',
-                        icon: AppIcons.donor,
-                        color: AppColors.donorGreen,
-                      ),
+                    child: StatCard(
+                      title: isHospital ? 'Hospital Status' : 'My Donations',
+                      value: isHospital
+                          ? 'Verified'
+                          : '${user?.donationsCount ?? 0}',
+                      icon: isHospital
+                          ? Icons.verified_user_rounded
+                          : AppIcons.donor,
+                      color: AppColors.donorGreen,
                     ),
                   ),
                 ],
               ),
-              loading: () => const Row(
+              loading: () => Row(
                 children: [
                   Expanded(
                     child: StatCard(
-                      title: 'Open Requests',
+                      title: isHospital ? 'Active Broadcasts' : 'Open Requests',
                       value: '...',
-                      icon: AppIcons.requests,
+                      icon: isHospital
+                          ? Icons.campaign_rounded
+                          : AppIcons.requests,
                       color: AppColors.emergencyRed,
                     ),
                   ),
-                  SizedBox(width: AppDimensions.spaceMD),
-                  Expanded(
-                    child: StatCard(
-                      title: 'My Donations',
-                      value: '...',
-                      icon: AppIcons.donor,
-                      color: AppColors.donorGreen,
-                    ),
+                  const SizedBox(width: AppDimensions.spaceMD),
+                  StatCard(
+                    title: isHospital ? 'Hospital Status' : 'My Donations',
+                    value: '...',
+                    icon: isHospital
+                        ? Icons.verified_user_rounded
+                        : AppIcons.donor,
+                    color: AppColors.donorGreen,
                   ),
                 ],
               ),
@@ -146,12 +200,16 @@ class HomeScreen extends ConsumerWidget {
             ),
             const SizedBox(height: AppDimensions.spaceLG),
 
-            // Active Emergency Requests Section
+            // Requests Section
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(AppStrings.activeEmergencyRequests,
-                    style: AppTypography.titleMedium),
+                Text(
+                  isHospital
+                      ? 'Your Active SOS Broadcasts'
+                      : AppStrings.activeEmergencyRequests,
+                  style: AppTypography.titleMedium,
+                ),
                 TextButton(
                   onPressed: () => context.go(RouteNames.requestsPath),
                   child: Text(
@@ -164,18 +222,21 @@ class HomeScreen extends ConsumerWidget {
             ),
             const SizedBox(height: AppDimensions.spaceSM),
 
-            // Real requests from Firestore (show top 3)
-            openRequestsAsync.when(
+            // Requests List Preview
+            requestsAsync.when(
               data: (requests) {
                 if (requests.isEmpty) {
                   return Padding(
-                    padding:
-                        const EdgeInsets.symmetric(vertical: AppDimensions.spaceMD),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: AppDimensions.spaceMD),
                     child: Center(
                       child: Text(
-                        'No active emergency requests right now.',
+                        isHospital
+                            ? 'No active SOS broadcasts right now. Tap above to broadcast an emergency request.'
+                            : 'No active emergency requests right now.',
                         style: AppTypography.bodyMedium
                             .copyWith(color: AppColors.textSecondary),
+                        textAlign: TextAlign.center,
                       ),
                     ),
                   );
@@ -190,30 +251,106 @@ class HomeScreen extends ConsumerWidget {
                               hospitalName: req.hospitalName,
                               bloodType: req.bloodGroup,
                               unitsRequired: '${req.units}',
-                              urgencyLevel: req.urgency.name.toUpperCase(),
+                              urgencyLevel: req.urgency.label,
                               distance: req.city,
-                              patientCaseId: req.patientCaseId ?? req.id.substring(0, 6).toUpperCase(),
-                              onRespondTap: () => context
-                                  .push(RouteNames.requestDetailRoute(req.id)),
+                              patientCaseId: req.patientCaseId ??
+                                  (req.id.length >= 6
+                                      ? req.id.substring(0, 6).toUpperCase()
+                                      : req.id.toUpperCase()),
+                              actionLabel:
+                                  isHospital ? 'Manage Queue' : 'Respond',
+                              actionColor: isHospital
+                                  ? AppColors.healthcareBlue
+                                  : AppColors.primaryRed,
+                              onTap: () {
+                                ref.read(selectedEmergencyRequestProvider.notifier).state = req;
+                                context.push(
+                                  RouteNames.requestDetailRoute(req.id),
+                                  extra: req,
+                                );
+                              },
+                              onRespondTap: () {
+                                ref.read(selectedEmergencyRequestProvider.notifier).state = req;
+                                context.push(
+                                  RouteNames.requestDetailRoute(req.id),
+                                  extra: req,
+                                );
+                              },
                             ),
                           ))
                       .toList(),
                 );
               },
               loading: () => const Center(
-                  child: Padding(
-                padding: EdgeInsets.all(AppDimensions.spaceLG),
-                child: CircularProgressIndicator(),
-              )),
+                child: Padding(
+                  padding: EdgeInsets.all(AppDimensions.spaceLG),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
               error: (err, _) => Text(
                 'Could not load requests.',
                 style: AppTypography.bodyMedium
                     .copyWith(color: AppColors.textSecondary),
               ),
             ),
+            if (!isHospital && hospitalsAsync != null) ...[
+              const SizedBox(height: AppDimensions.spaceLG),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Palghar District Hospitals',
+                    style: AppTypography.titleMedium,
+                  ),
+                  TextButton(
+                    onPressed: () => context.go(RouteNames.hospitalsPath),
+                    child: Text(
+                      'View All (20)',
+                      style: AppTypography.labelLarge
+                          .copyWith(color: AppColors.healthcareBlue),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppDimensions.spaceSM),
+              hospitalsAsync.when(
+                data: (hospitals) {
+                  final preview = hospitals.take(3).toList();
+                  return Column(
+                    children: preview
+                        .map(
+                          (h) => Padding(
+                            padding: const EdgeInsets.only(
+                                bottom: AppDimensions.spaceSM),
+                            child: HospitalCard(
+                              hospital: h,
+                              distanceText: h.formattedDistanceTo(
+                                  userPos?.latitude, userPos?.longitude),
+                              onTap: () =>
+                                  HospitalDetailsSheet.show(context, h),
+                              onCallTap: () => HospitalDetailsSheet.launchCall(
+                                  context, h.phone),
+                              onDirectionsTap: () =>
+                                  HospitalDetailsSheet.launchDirections(
+                                      context, h),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  );
+                },
+                loading: () => const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(AppDimensions.spaceMD),
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+                error: (_, __) => const SizedBox.shrink(),
+              ),
+            ],
             const SizedBox(height: AppDimensions.spaceLG),
 
-            // Healthcare disclaimer card
+            // Network / Hospital verification badge
             AppCard(
               backgroundColor:
                   AppColors.healthcareBlue.withValues(alpha: 0.08),
@@ -230,12 +367,16 @@ class HomeScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Verified Medical Partner Network',
+                          isHospital
+                              ? 'Verified Medical Partner Portal'
+                              : 'Verified Medical Partner Network',
                           style: AppTypography.labelLarge
                               .copyWith(color: AppColors.healthcareBlue),
                         ),
                         Text(
-                          'All blood banks and hospital requests are cross-verified by medical staff.',
+                          isHospital
+                              ? 'Emergency SOS broadcasts published from this portal are instantly pushed to nearby matching donors.'
+                              : 'All blood banks and hospital requests are cross-verified by medical staff.',
                           style: AppTypography.bodyMedium.copyWith(
                             color: AppColors.textSecondary,
                             fontSize: 12,
@@ -277,7 +418,6 @@ class _NotificationSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notifAsync = ref.watch(myNotificationsProvider(uid));
-    final router = GoRouter.of(context);
 
     return DraggableScrollableSheet(
       initialChildSize: 0.6,
@@ -298,17 +438,20 @@ class _NotificationSheet extends ConsumerWidget {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(
-                horizontal: AppDimensions.spaceMD, vertical: AppDimensions.spaceSM),
+                horizontal: AppDimensions.spaceMD,
+                vertical: AppDimensions.spaceSM),
             child: Row(
               children: [
                 Text('Notifications', style: AppTypography.titleMedium),
                 const Spacer(),
                 TextButton(
                   onPressed: () async {
-                    final notifs = ref.read(myNotificationsProvider(uid)).value ?? [];
+                    final notifs =
+                        ref.read(myNotificationsProvider(uid)).valueOrNull ?? [];
                     final service = ref.read(messagingServiceProvider);
                     for (final n in notifs) {
-                      await service.markNotificationRead(uid, n['id'] as String);
+                      await service.markNotificationRead(
+                          uid, n['id'] as String);
                     }
                   },
                   child: Text('Mark all read',
@@ -341,51 +484,65 @@ class _NotificationSheet extends ConsumerWidget {
                   controller: controller,
                   itemCount: notifs.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (_, i) {
+                  itemBuilder: (ctx, i) {
                     final n = notifs[i];
-                    final title = n['title'] as String? ?? 'Notification';
-                    final body = n['body'] as String? ?? '';
-                    final requestId = n['requestId'] as String?;
-                    final type = n['type'] as String? ?? '';
-
+                    final isRead = n['read'] as bool? ?? false;
+                    final reqId = n['requestId'] as String?;
                     return ListTile(
                       leading: CircleAvatar(
-                        backgroundColor: type == 'emergency_request'
-                            ? AppColors.emergencyRed.withValues(alpha: 0.15)
-                            : AppColors.donorGreen.withValues(alpha: 0.15),
+                        backgroundColor: (n['type'] == 'donor_selected')
+                            ? AppColors.donorGreen.withValues(alpha: 0.15)
+                            : AppColors.primaryRed.withValues(alpha: 0.12),
                         child: Icon(
-                          type == 'emergency_request'
-                              ? Icons.emergency
-                              : Icons.volunteer_activism,
-                          color: type == 'emergency_request'
-                              ? AppColors.emergencyRed
-                              : AppColors.donorGreen,
+                          (n['type'] == 'donor_selected')
+                              ? Icons.celebration_rounded
+                              : Icons.notification_important_rounded,
+                          color: (n['type'] == 'donor_selected')
+                              ? AppColors.donorGreen
+                              : AppColors.primaryRed,
                           size: 20,
                         ),
                       ),
-                      title: Text(title, style: AppTypography.labelLarge),
-                      subtitle: Text(body, style: AppTypography.bodyMedium),
+                      title: Text(
+                        n['title'] as String? ?? 'Notification',
+                        style: TextStyle(
+                          fontWeight:
+                              isRead ? FontWeight.normal : FontWeight.bold,
+                        ),
+                      ),
+                      subtitle: Text(n['body'] as String? ?? ''),
+                      trailing: !isRead
+                          ? Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: AppColors.primaryRed,
+                                shape: BoxShape.circle,
+                              ),
+                            )
+                          : null,
                       onTap: () async {
-                        // Mark as read
-                        await ref
-                            .read(messagingServiceProvider)
-                            .markNotificationRead(uid, n['id'] as String);
-                        // Navigate if there's a request
-                        if (requestId != null && requestId.isNotEmpty) {
-                          if (context.mounted) Navigator.of(context).pop();
-                          router.push(RouteNames.requestDetailRoute(requestId));
+                        final notifId = n['id'] as String?;
+                        if (notifId != null) {
+                          await ref
+                              .read(messagingServiceProvider)
+                              .markNotificationRead(uid, notifId);
+                        }
+                        if (context.mounted) {
+                          Navigator.of(context).pop();
+                          if (reqId != null && reqId.isNotEmpty) {
+                            context.push(RouteNames.requestDetailRoute(reqId));
+                          }
                         }
                       },
                     );
                   },
                 );
               },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (_, __) => Center(
-                child: Text('Could not load notifications.',
-                    style: AppTypography.bodyMedium
-                        .copyWith(color: AppColors.textSecondary)),
-              ),
+              loading: () =>
+                  const Center(child: CircularProgressIndicator()),
+              error: (_, __) => const Center(
+                  child: Text('Could not load notifications')),
             ),
           ),
         ],

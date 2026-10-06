@@ -52,6 +52,7 @@ class ProfileScreen extends ConsumerWidget {
     User? currentUser,
   ) {
     if (currentUser == null) return;
+    final isHospital = userModel?.isHospital ?? false;
 
     final nameController = TextEditingController(
       text: userModel?.fullName ?? currentUser.displayName ?? '',
@@ -61,6 +62,12 @@ class ProfileScreen extends ConsumerWidget {
     );
     final cityController = TextEditingController(
       text: userModel?.city ?? '',
+    );
+    final addressController = TextEditingController(
+      text: userModel?.address ?? '',
+    );
+    final licenseController = TextEditingController(
+      text: userModel?.licenseNumber ?? '',
     );
     String selectedBloodGroup = userModel?.bloodGroup.isNotEmpty == true
         ? userModel!.bloodGroup
@@ -101,7 +108,10 @@ class ProfileScreen extends ConsumerWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Edit Profile', style: AppTypography.titleLarge),
+                          Text(
+                            isHospital ? 'Edit Hospital Profile' : 'Edit Profile',
+                            style: AppTypography.titleLarge,
+                          ),
                           IconButton(
                             icon: const Icon(Icons.close_rounded),
                             onPressed: () => Navigator.of(context).pop(),
@@ -111,16 +121,22 @@ class ProfileScreen extends ConsumerWidget {
                       const SizedBox(height: AppDimensions.spaceMD),
                       CustomTextField(
                         controller: nameController,
-                        label: 'Full Name',
-                        hint: 'John Doe',
-                        prefixIcon: Icons.person_outline_rounded,
-                        validator: (v) =>
-                            Validators.validateRequired(v, 'Full Name'),
+                        label: isHospital ? 'Hospital Name' : 'Full Name',
+                        hint: isHospital ? 'City Hospital' : 'John Doe',
+                        prefixIcon: isHospital
+                            ? Icons.local_hospital_outlined
+                            : Icons.person_outline_rounded,
+                        validator: (v) => Validators.validateRequired(
+                          v,
+                          isHospital ? 'Hospital Name' : 'Full Name',
+                        ),
                       ),
                       const SizedBox(height: AppDimensions.spaceMD),
                       CustomTextField(
                         controller: phoneController,
-                        label: 'Phone Number',
+                        label: isHospital
+                            ? 'Emergency Desk Helpline'
+                            : 'Phone Number',
                         hint: '+1 234 567 8900',
                         prefixIcon: Icons.phone_outlined,
                         keyboardType: TextInputType.phone,
@@ -129,75 +145,62 @@ class ProfileScreen extends ConsumerWidget {
                       const SizedBox(height: AppDimensions.spaceMD),
                       CustomTextField(
                         controller: cityController,
-                        label: 'City / Region (Optional)',
-                        hint: 'e.g. New York, NY',
+                        label: 'City / Region',
+                        hint: 'e.g. Mumbai, New York',
                         prefixIcon: Icons.location_city_rounded,
                       ),
-                      const SizedBox(height: AppDimensions.spaceMD),
-                      Text(
-                        'Blood Group',
-                        style: AppTypography.titleMedium.copyWith(fontSize: 14),
-                      ),
-                      const SizedBox(height: AppDimensions.spaceXS),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: AppStrings.bloodGroups.map((group) {
-                          final isSelected = selectedBloodGroup == group;
-                          return BloodGroupChip(
-                            bloodGroup: group,
-                            isSelected: isSelected,
-                            onTap: () {
-                              setModalState(() {
-                                selectedBloodGroup = group;
-                              });
-                            },
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: AppDimensions.spaceMD),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Available for Emergency Donations'),
-                        subtitle: const Text(
-                          'Allows other verified users to find and contact you during blood shortages.',
+                      if (isHospital) ...[
+                        const SizedBox(height: AppDimensions.spaceMD),
+                        CustomTextField(
+                          controller: addressController,
+                          label: 'Hospital Address',
+                          hint: 'e.g. 102 Healthcare Ave',
+                          prefixIcon: Icons.map_outlined,
                         ),
-                        value: isAvailable,
-                        activeThumbColor: AppColors.donorGreen,
-                        onChanged: (val) {
-                          setModalState(() => isAvailable = val);
-                        },
-                      ),
-                      const SizedBox(height: AppDimensions.spaceSM),
-                      // Notice regarding verification
-                      Container(
-                        padding: const EdgeInsets.all(AppDimensions.spaceSM),
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryRed.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(AppDimensions.radiusSM),
+                        const SizedBox(height: AppDimensions.spaceMD),
+                        CustomTextField(
+                          controller: licenseController,
+                          label: 'Medical License / Registration ID',
+                          hint: 'e.g. REG-HOSP-2024-9901',
+                          prefixIcon: Icons.badge_outlined,
                         ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.verified_user_outlined,
-                              size: 20,
-                              color: AppColors.primaryRed,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                userModel?.isVerified == true
-                                    ? 'Account is medically verified.'
-                                    : 'Account is pending medical review. Verification is managed by certified administrators.',
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
+                      ] else ...[
+                        const SizedBox(height: AppDimensions.spaceMD),
+                        Text(
+                          'Blood Group',
+                          style: AppTypography.titleMedium.copyWith(fontSize: 14),
                         ),
-                      ),
+                        const SizedBox(height: AppDimensions.spaceXS),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: AppStrings.bloodGroups.map((group) {
+                            final isSelected = selectedBloodGroup == group;
+                            return BloodGroupChip(
+                              bloodGroup: group,
+                              isSelected: isSelected,
+                              onTap: () {
+                                setModalState(() {
+                                  selectedBloodGroup = group;
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: AppDimensions.spaceMD),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Available for Emergency Donations'),
+                          subtitle: const Text(
+                            'Allows other verified users to find and contact you during blood shortages.',
+                          ),
+                          value: isAvailable,
+                          activeThumbColor: AppColors.donorGreen,
+                          onChanged: (val) {
+                            setModalState(() => isAvailable = val);
+                          },
+                        ),
+                      ],
                       const SizedBox(height: AppDimensions.spaceLG),
                       PrimaryButton(
                         label: 'Save Changes',
@@ -210,14 +213,32 @@ class ProfileScreen extends ConsumerWidget {
 
                           setModalState(() => isSaving = true);
                           try {
-                            await ref.read(authServiceProvider).updateUserProfile(
-                                  uid: currentUser.uid,
-                                  fullName: nameController.text,
-                                  phone: phoneController.text,
-                                  bloodGroup: selectedBloodGroup,
-                                  city: cityController.text,
-                                  isDonorAvailable: isAvailable,
-                                );
+                            if (isHospital) {
+                              await ref
+                                  .read(authServiceProvider)
+                                  .updateHospitalProfile(
+                                    uid: currentUser.uid,
+                                    hospitalName: nameController.text,
+                                    phone: phoneController.text,
+                                    city: cityController.text,
+                                    address: addressController.text,
+                                    licenseNumber:
+                                        licenseController.text.trim().isNotEmpty
+                                            ? licenseController.text.trim()
+                                            : null,
+                                  );
+                            } else {
+                              await ref
+                                  .read(authServiceProvider)
+                                  .updateUserProfile(
+                                    uid: currentUser.uid,
+                                    fullName: nameController.text,
+                                    phone: phoneController.text,
+                                    bloodGroup: selectedBloodGroup,
+                                    city: cityController.text,
+                                    isDonorAvailable: isAvailable,
+                                  );
+                            }
 
                             if (!context.mounted) return;
                             Navigator.of(context).pop();
@@ -262,10 +283,12 @@ class ProfileScreen extends ConsumerWidget {
     final userProfileAsync = ref.watch(currentUserProfileProvider);
     final currentUser = ref.watch(firebaseAuthProvider).currentUser;
 
-    final userModel = userProfileAsync.value;
+    final userModel = userProfileAsync.valueOrNull;
+    final isHospital = userModel?.isHospital ?? false;
+
     final fullName = (userModel != null && userModel.fullName.isNotEmpty)
         ? userModel.fullName
-        : (currentUser?.displayName ?? 'Blood Donor');
+        : (currentUser?.displayName ?? (isHospital ? 'Hospital Partner' : 'Blood Donor'));
     final email = (userModel != null && userModel.email.isNotEmpty)
         ? userModel.email
         : (currentUser?.email ?? 'No email provided');
@@ -285,10 +308,13 @@ class ProfileScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: CustomAppBar(
-        title: 'Donor Profile',
+        title: isHospital ? 'Hospital Portal' : 'Donor Profile',
         actions: [
           IconButton(
-            icon: const Icon(Icons.edit_outlined, color: AppColors.primaryRed),
+            icon: Icon(
+              Icons.edit_outlined,
+              color: isHospital ? AppColors.healthcareBlue : AppColors.primaryRed,
+            ),
             tooltip: 'Edit Profile',
             onPressed: () => _openEditProfileSheet(
               context,
@@ -314,26 +340,47 @@ class ProfileScreen extends ConsumerWidget {
           children: [
             const SizedBox(height: AppDimensions.spaceMD),
             Center(
-              child: Stack(
-                alignment: Alignment.bottomRight,
-                children: [
-                  CircleAvatar(
-                    radius: AppDimensions.avatarXL / 2,
-                    backgroundColor: AppColors.primaryRed.withValues(alpha: 0.1),
-                    child: Text(
-                      _getInitials(fullName),
-                      style: AppTypography.displayLarge.copyWith(
-                        color: AppColors.primaryRed,
+              child: isHospital
+                  ? Container(
+                      width: AppDimensions.avatarXL,
+                      height: AppDimensions.avatarXL,
+                      decoration: BoxDecoration(
+                        color: AppColors.healthcareBlue.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppColors.healthcareBlue,
+                          width: 2,
+                        ),
                       ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.local_hospital_rounded,
+                          size: 44,
+                          color: AppColors.healthcareBlue,
+                        ),
+                      ),
+                    )
+                  : Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        CircleAvatar(
+                          radius: AppDimensions.avatarXL / 2,
+                          backgroundColor:
+                              AppColors.primaryRed.withValues(alpha: 0.1),
+                          child: Text(
+                            _getInitials(fullName),
+                            style: AppTypography.displayLarge.copyWith(
+                              color: AppColors.primaryRed,
+                            ),
+                          ),
+                        ),
+                        BloodTypeBadge(
+                          bloodType: bloodGroup,
+                          size: BloodBadgeSize.small,
+                          isSelected: true,
+                        ),
+                      ],
                     ),
-                  ),
-                  BloodTypeBadge(
-                    bloodType: bloodGroup,
-                    size: BloodBadgeSize.small,
-                    isSelected: true,
-                  ),
-                ],
-              ),
             ),
             const SizedBox(height: AppDimensions.spaceMD),
             Row(
@@ -348,8 +395,10 @@ class ProfileScreen extends ConsumerWidget {
                 ),
                 const SizedBox(width: 6),
                 StatusChip(
-                  label: isVerified ? 'Verified Donor' : 'Pending Verification',
-                  type: isVerified ? StatusType.verified : StatusType.pending,
+                  label: isHospital
+                      ? 'Verified Hospital'
+                      : (isVerified ? 'Verified Donor' : 'Pending Verification'),
+                  type: StatusType.verified,
                 ),
               ],
             ),
@@ -363,95 +412,157 @@ class ProfileScreen extends ConsumerWidget {
               ),
               textAlign: TextAlign.center,
             ),
+            if (isHospital &&
+                userModel?.address != null &&
+                userModel!.address!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                '📍 ${userModel.address}',
+                style: AppTypography.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
             const SizedBox(height: AppDimensions.spaceMD),
 
-            // Prominent Donor Availability Switch Card (Task 1)
-            AppCard(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppDimensions.spaceMD,
-                vertical: AppDimensions.spaceSM,
-              ),
-              child: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                secondary: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: (isDonorAvailable
-                            ? AppColors.donorGreen
-                            : AppColors.textSecondary)
-                        .withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    AppIcons.bloodDrop,
-                    color: isDonorAvailable
-                        ? AppColors.donorGreen
-                        : AppColors.textSecondary,
-                    size: 24,
-                  ),
-                ),
-                title: Text(
-                  'Available to Donate Blood',
-                  style: AppTypography.titleMedium.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                subtitle: Text(
-                  isDonorAvailable
-                      ? 'You are active and visible in emergency donor searches.'
-                      : 'You are currently not listed in emergency donor searches.',
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-                value: isDonorAvailable,
-                activeThumbColor: AppColors.donorGreen,
-                onChanged: (newVal) async {
-                  if (currentUser == null) return;
-                  try {
-                    await ref
-                        .read(authServiceProvider)
-                        .updateDonorAvailability(
-                          uid: currentUser.uid,
-                          isAvailable: newVal,
-                        );
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(newVal
-                            ? 'You are now marked as available to donate.'
-                            : 'You are now marked as unavailable.'),
-                        duration: const Duration(seconds: 2),
-                        behavior: SnackBarBehavior.floating,
+            // Hospital Desk or Donor Switch Card
+            if (isHospital) ...[
+              AppCard(
+                padding: const EdgeInsets.all(AppDimensions.spaceMD),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.healthcareBlue.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
                       ),
-                    );
-                  } catch (e) {
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(AuthService.getReadableErrorMessage(e)),
-                        backgroundColor: AppColors.error,
-                        behavior: SnackBarBehavior.floating,
+                      child: const Icon(
+                        Icons.emergency_share_outlined,
+                        color: AppColors.healthcareBlue,
+                        size: 24,
                       ),
-                    );
-                  }
-                },
+                    ),
+                    const SizedBox(width: AppDimensions.spaceMD),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Authorized Emergency Desk',
+                            style: AppTypography.titleSmall.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Your hospital is authorized to broadcast SOS blood requirements and manage donor volunteer queues.',
+                            style: AppTypography.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ] else ...[
+              // Prominent Donor Availability Switch Card
+              AppCard(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimensions.spaceMD,
+                  vertical: AppDimensions.spaceSM,
+                ),
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: (isDonorAvailable
+                              ? AppColors.donorGreen
+                              : AppColors.textSecondary)
+                          .withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      AppIcons.bloodDrop,
+                      color: isDonorAvailable
+                          ? AppColors.donorGreen
+                          : AppColors.textSecondary,
+                      size: 24,
+                    ),
+                  ),
+                  title: Text(
+                    'Available to Donate Blood',
+                    style: AppTypography.titleMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  subtitle: Text(
+                    isDonorAvailable
+                        ? 'You are active and visible in emergency donor searches.'
+                        : 'You are currently not listed in emergency donor searches.',
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                  value: isDonorAvailable,
+                  activeThumbColor: AppColors.donorGreen,
+                  onChanged: (newVal) async {
+                    if (currentUser == null) return;
+                    try {
+                      await ref
+                          .read(authServiceProvider)
+                          .updateDonorAvailability(
+                            uid: currentUser.uid,
+                            isAvailable: newVal,
+                          );
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(newVal
+                              ? 'You are now marked as available to donate.'
+                              : 'You are now marked as unavailable.'),
+                          duration: const Duration(seconds: 2),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(AuthService.getReadableErrorMessage(e)),
+                          backgroundColor: AppColors.error,
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
+            ],
 
             const SizedBox(height: AppDimensions.spaceMD),
             AppCard(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildProfileStat('Donations', '$donationsCount Times'),
-                  Container(height: 30, width: 1, color: AppColors.borderLight),
-                  _buildProfileStat('Lives Saved', '$livesSaved Lives'),
+                  _buildProfileStat(
+                    isHospital ? 'Facility Type' : 'Donations',
+                    isHospital ? 'Hospital' : '$donationsCount Times',
+                  ),
                   Container(height: 30, width: 1, color: AppColors.borderLight),
                   _buildProfileStat(
-                    'Eligibility',
-                    isDonorAvailable ? 'Available' : 'Unavailable',
+                    isHospital ? 'Lives Saved' : 'Lives Saved',
+                    isHospital ? 'Network' : '$livesSaved Lives',
+                  ),
+                  Container(height: 30, width: 1, color: AppColors.borderLight),
+                  _buildProfileStat(
+                    'Verification',
+                    'Active',
                   ),
                 ],
               ),
@@ -462,8 +573,11 @@ class ProfileScreen extends ConsumerWidget {
               child: Column(
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.edit_outlined, color: AppColors.primaryRed),
-                    title: const Text('Edit Profile'),
+                    leading: Icon(
+                      Icons.edit_outlined,
+                      color: isHospital ? AppColors.healthcareBlue : AppColors.primaryRed,
+                    ),
+                    title: Text(isHospital ? 'Edit Hospital Details' : 'Edit Profile'),
                     trailing: const Icon(AppIcons.forward, size: 16),
                     onTap: () => _openEditProfileSheet(
                       context,
@@ -471,20 +585,6 @@ class ProfileScreen extends ConsumerWidget {
                       userModel,
                       currentUser,
                     ),
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(AppIcons.donor, color: AppColors.primaryRed),
-                    title: const Text('Donation History'),
-                    trailing: const Icon(AppIcons.forward, size: 16),
-                    onTap: () {},
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(AppIcons.settings, color: AppColors.healthcareBlue),
-                    title: const Text('Account Settings'),
-                    trailing: const Icon(AppIcons.forward, size: 16),
-                    onTap: () {},
                   ),
                   const Divider(height: 1),
                   ListTile(

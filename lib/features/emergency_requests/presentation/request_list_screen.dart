@@ -6,8 +6,10 @@ import '../../../core/constants/app_dimensions.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/router/route_names.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../core/services/emergency_request_service.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/widgets/accepted_assignment_card.dart';
 import '../../../core/widgets/blood_request_card.dart';
 import '../../../core/widgets/custom_app_bar.dart';
 import '../../../core/widgets/empty_state_view.dart';
@@ -25,41 +27,55 @@ class _RequestListScreenState extends ConsumerState<RequestListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final requestsAsync =
-        ref.watch(openRequestsProvider(_selectedBloodGroup));
+    final userProfileAsync = ref.watch(currentUserProfileProvider);
+    final isHospital = userProfileAsync.valueOrNull?.isHospital ?? false;
+
+    // Hospitals ONLY see their own requests; Donors see open requests from all hospitals
+    final requestsAsync = isHospital
+        ? ref.watch(myRequestsProvider)
+        : ref.watch(openRequestsProvider(_selectedBloodGroup));
+    final acceptedRequestsAsync =
+        isHospital ? null : ref.watch(myAcceptedRequestsProvider);
 
     return Scaffold(
       appBar: CustomAppBar(
-        title: 'Emergency Requests',
-        subtitle: 'Real-time blood requirement feed',
+        title: isHospital ? 'My SOS Broadcasts' : 'Emergency Requests',
+        subtitle: isHospital
+            ? 'Manage your active broadcasts & donor queues'
+            : 'Hospital-verified blood requirements',
         actions: [
-          if (_selectedBloodGroup != null)
-            IconButton(
-              icon: const Icon(Icons.filter_alt_off_outlined,
-                  color: AppColors.emergencyRed),
-              tooltip: 'Clear filter',
-              onPressed: () =>
-                  setState(() => _selectedBloodGroup = null),
-            )
-          else
-            IconButton(
-              icon: const Icon(AppIcons.filter, color: AppColors.textPrimary),
-              tooltip: 'Filter by blood group',
-              onPressed: _showFilterSheet,
-            ),
+          if (!isHospital) ...[
+            if (_selectedBloodGroup != null)
+              IconButton(
+                icon: const Icon(Icons.filter_alt_off_outlined,
+                    color: AppColors.emergencyRed),
+                tooltip: 'Clear filter',
+                onPressed: () =>
+                    setState(() => _selectedBloodGroup = null),
+              )
+            else
+              IconButton(
+                icon: const Icon(AppIcons.filter, color: AppColors.textPrimary),
+                tooltip: 'Filter by blood group',
+                onPressed: _showFilterSheet,
+              ),
+          ],
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: AppColors.emergencyRed,
-        icon: const Icon(AppIcons.add, color: Colors.white),
-        label: const Text('New SOS Request',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        onPressed: () => context.push(RouteNames.createRequestPath),
-      ),
+      floatingActionButton: isHospital
+          ? FloatingActionButton.extended(
+              backgroundColor: AppColors.emergencyRed,
+              icon: const Icon(Icons.emergency_share_outlined, color: Colors.white),
+              label: const Text('Hospital SOS',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
+              onPressed: () => context.push(RouteNames.createRequestPath),
+            )
+          : null,
       body: Column(
         children: [
-          // ── Active filter indicator ──────────────────────────────────
-          if (_selectedBloodGroup != null)
+          // ── Active filter indicator (donors only) ──────────────────────
+          if (!isHospital && _selectedBloodGroup != null)
             Container(
               width: double.infinity,
               color: AppColors.emergencyRed.withValues(alpha: 0.08),
@@ -115,14 +131,34 @@ class _RequestListScreenState extends ConsumerState<RequestListScreen> {
                         icon: const Icon(Icons.refresh_rounded),
                         label: const Text('Retry'),
                         onPressed: () => ref.refresh(
-                            openRequestsProvider(_selectedBloodGroup)),
+                          isHospital
+                              ? myRequestsProvider
+                              : openRequestsProvider(_selectedBloodGroup),
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
               data: (requests) {
-                if (requests.isEmpty) {
+                final acceptedList =
+                    !isHospital ? (acceptedRequestsAsync?.valueOrNull ?? []) : [];
+                final otherRequests = !isHospital
+                    ? requests.where((r) => !acceptedList.any((a) => a.id == r.id)).toList()
+                    : requests;
+
+                if (otherRequests.isEmpty && acceptedList.isEmpty) {
+                  if (isHospital) {
+                    return EmptyStateView(
+                      icon: Icons.emergency_share_outlined,
+                      title: 'No Active SOS Broadcasts',
+                      message:
+                          'You have no active emergency broadcasts. Tap "Hospital SOS" to publish a request to matching donors.',
+                      buttonLabel: 'Broadcast SOS Now',
+                      onButtonPressed: () =>
+                          context.push(RouteNames.createRequestPath),
+                    );
+                  }
                   return EmptyStateView(
                     icon: Icons.bloodtype_outlined,
                     title: _selectedBloodGroup != null
@@ -141,30 +177,98 @@ class _RequestListScreenState extends ConsumerState<RequestListScreen> {
 
                 return RefreshIndicator(
                   onRefresh: () async {
-                    ref.invalidate(
-                        openRequestsProvider(_selectedBloodGroup));
+                    if (isHospital) {
+                      ref.invalidate(myRequestsProvider);
+                    } else {
+                      ref.invalidate(
+                          openRequestsProvider(_selectedBloodGroup));
+                      ref.invalidate(myAcceptedRequestsProvider);
+                    }
                   },
-                  child: ListView.separated(
+                  child: ListView(
                     padding: AppDimensions.screenPadding.copyWith(
                         bottom: AppDimensions.spaceXXL + 56),
-                    itemCount: requests.length,
-                    separatorBuilder: (_, __) =>
-                        const SizedBox(height: AppDimensions.spaceMD),
-                    itemBuilder: (context, index) {
-                      final req = requests[index];
-                      return BloodRequestCard(
-                        hospitalName: req.hospitalName,
-                        bloodType: req.bloodGroup,
-                        unitsRequired: '${req.units}',
-                        urgencyLevel: req.urgency.label,
-                        distance: req.city,
-                        patientCaseId: req.patientCaseId ?? req.id.substring(0, 6).toUpperCase(),
-                        onTap: () => context
-                            .push(RouteNames.requestDetailRoute(req.id)),
-                        onRespondTap: () => context
-                            .push(RouteNames.requestDetailRoute(req.id)),
-                      );
-                    },
+                    children: [
+                      // ── Accepted assignments for this donor ──────────────
+                      if (!isHospital && acceptedList.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: AppDimensions.spaceSM),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.check_circle_rounded,
+                                  color: AppColors.donorGreen, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Your Accepted Assignment',
+                                style: AppTypography.titleMedium.copyWith(
+                                  color: AppColors.donorGreen,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        ...acceptedList.map((req) => AcceptedAssignmentCard(request: req)),
+                        if (otherRequests.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                                top: AppDimensions.spaceSM,
+                                bottom: AppDimensions.spaceMD),
+                            child: Text(
+                              'Other Emergency Requests',
+                              style: AppTypography.titleMedium,
+                            ),
+                          ),
+                      ],
+
+                      // ── Regular requests (or other open requests) ────────
+                      ...otherRequests.map((req) => Padding(
+                            padding: const EdgeInsets.only(
+                                bottom: AppDimensions.spaceMD),
+                            child: BloodRequestCard(
+                              hospitalName: req.hospitalName,
+                              bloodType: req.bloodGroup,
+                              unitsRequired: '${req.units}',
+                              urgencyLevel: req.urgency.label,
+                              distance: req.city,
+                              patientCaseId: req.patientCaseId ??
+                                  (req.id.length >= 6
+                                      ? req.id.substring(0, 6).toUpperCase()
+                                      : req.id.toUpperCase()),
+                              actionLabel: isHospital ? 'Manage Queue' : 'Respond',
+                              actionColor: isHospital
+                                  ? AppColors.healthcareBlue
+                                  : AppColors.primaryRed,
+                              onTap: () {
+                                ref.read(selectedEmergencyRequestProvider.notifier).state = req;
+                                context.push(
+                                  RouteNames.requestDetailRoute(req.id),
+                                  extra: req,
+                                );
+                              },
+                              onRespondTap: () {
+                                ref.read(selectedEmergencyRequestProvider.notifier).state = req;
+                                context.push(
+                                  RouteNames.requestDetailRoute(req.id),
+                                  extra: req,
+                                );
+                              },
+                            ),
+                          )),
+
+                      if (!isHospital && acceptedList.isNotEmpty && otherRequests.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: AppDimensions.spaceLG),
+                          child: Center(
+                            child: Text(
+                              'No other open emergency requests at this moment.',
+                              style: AppTypography.bodyMedium
+                                  .copyWith(color: AppColors.textSecondary),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 );
               },
@@ -230,4 +334,3 @@ class _RequestListScreenState extends ConsumerState<RequestListScreen> {
     );
   }
 }
-

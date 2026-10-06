@@ -98,6 +98,14 @@ class EmergencyRequestService {
     return query.snapshots().map((snapshot) {
       final list = snapshot.docs
           .map(EmergencyRequestModel.fromFirestore)
+          // Hide from donors if fulfilled or if a donor is already selected
+          .where((req) {
+            if (!req.status.isActive) return false;
+            if (req.selectedDonorUid != null && req.selectedDonorUid!.isNotEmpty) {
+              return false;
+            }
+            return true;
+          })
           .toList();
       list.sort((a, b) {
         final aTime = a.createdAt ?? DateTime(0);
@@ -105,12 +113,34 @@ class EmergencyRequestService {
         return bTime.compareTo(aTime); // Newest first
       });
       return list;
-    });
+    }).handleError((_) => <EmergencyRequestModel>[]);
+  }
+
+  /// Stream of requests where the current logged-in donor has been selected/accepted by the hospital.
+  /// Remains visible to the accepted donor even if the request is marked fulfilled or open.
+  Stream<List<EmergencyRequestModel>> myAcceptedRequestsStream() {
+    if (_currentUser == null) return Stream.value([]);
+    return _db
+        .collection(FirebaseCollections.emergencyRequests)
+        .where('selectedDonorUid', isEqualTo: _currentUser!.uid)
+        .snapshots()
+        .map((snapshot) {
+      final list = snapshot.docs
+          .map(EmergencyRequestModel.fromFirestore)
+          .where((r) => r.status != RequestStatus.cancelled && r.status != RequestStatus.closed)
+          .toList();
+      list.sort((a, b) {
+        final aTime = a.createdAt ?? DateTime(0);
+        final bTime = b.createdAt ?? DateTime(0);
+        return bTime.compareTo(aTime); // Newest first
+      });
+      return list;
+    }).handleError((_) => <EmergencyRequestModel>[]);
   }
 
   /// Stream of all requests created by the current user.
   Stream<List<EmergencyRequestModel>> myRequestsStream() {
-    _requireAuth();
+    if (_currentUser == null) return Stream.value([]);
     return _db
         .collection(FirebaseCollections.emergencyRequests)
         .where('requesterUid', isEqualTo: _currentUser!.uid)
@@ -125,11 +155,12 @@ class EmergencyRequestService {
         return bTime.compareTo(aTime); // Newest first
       });
       return list;
-    });
+    }).handleError((_) => <EmergencyRequestModel>[]);
   }
 
   /// Stream of a single request by ID.
   Stream<EmergencyRequestModel?> requestStream(String requestId) {
+    if (requestId.isEmpty) return Stream.value(null);
     return _db
         .collection(FirebaseCollections.emergencyRequests)
         .doc(requestId)
@@ -137,6 +168,8 @@ class EmergencyRequestService {
         .map((snapshot) {
       if (!snapshot.exists || snapshot.data() == null) return null;
       return EmergencyRequestModel.fromFirestore(snapshot);
+    }).handleError((_) {
+      return null;
     });
   }
 
@@ -181,6 +214,10 @@ class EmergencyRequestService {
   Future<void> markFulfilled(String requestId) async {
     _requireAuth();
 
+    String? selectedDonorUid;
+    String? hospitalName;
+    String? bloodGroup;
+
     await _db.runTransaction((tx) async {
       final docRef = _db
           .collection(FirebaseCollections.emergencyRequests)
@@ -205,11 +242,47 @@ class EmergencyRequestService {
             'Only open requests can be marked fulfilled. This request is ${request.status.label}.');
       }
 
+      selectedDonorUid = request.selectedDonorUid;
+      hospitalName = request.hospitalName;
+      bloodGroup = request.bloodGroup;
+
       tx.update(docRef, {
         'status': RequestStatus.fulfilled.name,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // Credit the selected donor's profile
+      if (selectedDonorUid != null && selectedDonorUid!.isNotEmpty) {
+        final donorUserRef = _db
+            .collection(FirebaseCollections.users)
+            .doc(selectedDonorUid);
+        tx.update(donorUserRef, {
+          'donationsCount': FieldValue.increment(1),
+          'livesSaved': FieldValue.increment(1),
+        });
+      }
     });
+
+    // Notify the accepted donor that the donation was successfully fulfilled
+    if (selectedDonorUid != null && selectedDonorUid!.isNotEmpty) {
+      try {
+        final notifRef = _db
+            .collection(FirebaseCollections.users)
+            .doc(selectedDonorUid!)
+            .collection(FirebaseCollections.notifications)
+            .doc();
+        await notifRef.set({
+          'type': 'donation_fulfilled',
+          'requestId': requestId,
+          'hospitalName': hospitalName ?? 'The hospital',
+          'bloodGroup': bloodGroup ?? '',
+          'title': '❤️ Donation Fulfilled!',
+          'body': 'Your blood donation for $hospitalName has been marked fulfilled. Thank you for saving a life!',
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
+    }
   }
 
   // ── Donor Responses ───────────────────────────────────────────────────────
@@ -338,26 +411,118 @@ class EmergencyRequestService {
   }
 
   /// Stream of active donor responses for a specific request.
-  /// Only returns non-withdrawn responses.
+  /// Only returns non-withdrawn responses, with any selected donor listed first.
   Stream<List<DonorResponseModel>> responsesStream(String requestId) {
+    if (requestId.isEmpty) return Stream.value([]);
     return _db
         .collection(_responsesPath(requestId))
-        .where('status', isEqualTo: DonorResponseStatus.active.name)
         .snapshots()
         .map((snapshot) {
       final list = snapshot.docs
           .map(DonorResponseModel.fromFirestore)
+          .where((r) => r.status != DonorResponseStatus.withdrawn)
           .toList();
       list.sort((a, b) {
+        if (a.status == DonorResponseStatus.selected &&
+            b.status != DonorResponseStatus.selected) {
+          return -1;
+        }
+        if (b.status == DonorResponseStatus.selected &&
+            a.status != DonorResponseStatus.selected) {
+          return 1;
+        }
         final aTime = a.respondedAt ?? DateTime(0);
         final bTime = b.respondedAt ?? DateTime(0);
         return aTime.compareTo(bTime); // Oldest first
       });
       return list;
+    }).handleError((_) {
+      return <DonorResponseModel>[];
     });
   }
 
-  /// Checks if the current user has an active response for a given request.
+  /// Allows the hospital (requester) to select a donor from the response queue.
+  Future<void> selectDonor({
+    required String requestId,
+    required String donorUid,
+    required String donorName,
+  }) async {
+    _requireAuth();
+
+    await _db.runTransaction((tx) async {
+      final requestRef = _db
+          .collection(FirebaseCollections.emergencyRequests)
+          .doc(requestId);
+      final requestSnapshot = await tx.get(requestRef);
+
+      if (!requestSnapshot.exists || requestSnapshot.data() == null) {
+        throw Exception('Emergency request not found.');
+      }
+
+      final request = EmergencyRequestModel.fromFirestore(requestSnapshot);
+
+      if (request.requesterUid != _currentUser!.uid) {
+        throw FirebaseAuthException(
+          code: 'permission-denied',
+          message: 'Only the hospital that created this request can select donors.',
+        );
+      }
+
+      final responseDocId = DonorResponseModel.buildId(
+        requestId: requestId,
+        donorUid: donorUid,
+      );
+      final responseRef =
+          _db.collection(_responsesPath(requestId)).doc(responseDocId);
+      final responseSnapshot = await tx.get(responseRef);
+
+      if (!responseSnapshot.exists || responseSnapshot.data() == null) {
+        throw Exception('Donor response not found in queue.');
+      }
+
+      // Update emergency request with selected donor info
+      tx.update(requestRef, {
+        'selectedDonorUid': donorUid,
+        'selectedDonorName': donorName,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Update donor response document status to selected
+      tx.update(responseRef, {
+        'status': DonorResponseStatus.selected.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+
+    // Notify the donor of selection
+    try {
+      final requestSnap = await _db
+          .collection(FirebaseCollections.emergencyRequests)
+          .doc(requestId)
+          .get();
+      if (requestSnap.exists && requestSnap.data() != null) {
+        final data = requestSnap.data()!;
+        final hospitalName =
+            data['hospitalName'] as String? ?? 'The hospital';
+        final bloodGroup = data['bloodGroup'] as String? ?? '';
+        final contactPhone = data['contactPhone'] as String? ?? '';
+        final city = data['city'] as String? ?? '';
+
+        await _messaging.notifyDonorSelected(
+          donorUid: donorUid,
+          requestId: requestId,
+          hospitalName: hospitalName,
+          bloodGroup: bloodGroup,
+          hospitalPhone: contactPhone,
+          city: city,
+        );
+      }
+    } catch (_) {
+      // Non-fatal notification error
+    }
+  }
+
+  /// Checks if the current user has an active or selected response for a given request.
   Future<DonorResponseModel?> getMyResponse(String requestId) async {
     _requireAuth();
     final docId = DonorResponseModel.buildId(
@@ -383,6 +548,10 @@ final emergencyRequestServiceProvider =
   return EmergencyRequestService(db, auth, messaging);
 });
 
+/// In-memory holder for the currently selected request (ensures instant 0ms load on detail screen)
+final selectedEmergencyRequestProvider =
+    StateProvider<EmergencyRequestModel?>((ref) => null);
+
 /// Stream of open emergency requests (optionally filtered by blood group).
 final openRequestsProvider =
     StreamProvider.family<List<EmergencyRequestModel>, String?>(
@@ -397,8 +566,17 @@ final myRequestsProvider =
     StreamProvider<List<EmergencyRequestModel>>((ref) {
   final service = ref.watch(emergencyRequestServiceProvider);
   final authState = ref.watch(authStateChangesProvider);
-  if (authState.value == null) return Stream.value([]);
+  if (authState.valueOrNull == null) return Stream.value([]);
   return service.myRequestsStream();
+});
+
+/// Stream of requests where the current logged-in donor has been accepted/selected by the hospital.
+final myAcceptedRequestsProvider =
+    StreamProvider<List<EmergencyRequestModel>>((ref) {
+  final service = ref.watch(emergencyRequestServiceProvider);
+  final authState = ref.watch(authStateChangesProvider);
+  if (authState.valueOrNull == null) return Stream.value([]);
+  return service.myAcceptedRequestsStream();
 });
 
 /// Stream of a single request by ID.

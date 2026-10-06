@@ -41,7 +41,13 @@ class HospitalDetailsSheet extends ConsumerWidget {
     final uri = Uri.parse('tel:$sanitized');
 
     try {
-      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      bool launched = false;
+      if (await canLaunchUrl(uri)) {
+        launched = await launchUrl(uri);
+      }
+      if (!launched) {
+        launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
       if (!launched) {
         await Clipboard.setData(ClipboardData(text: phone));
         if (context.mounted) {
@@ -78,35 +84,49 @@ class HospitalDetailsSheet extends ConsumerWidget {
       return;
     }
 
-    Uri? targetUri;
-    if (hospital.hasCoordinates) {
-      // Try geo: intent URI with fallback to universal web maps search
-      targetUri = Uri.parse(
-        'geo:${hospital.latitude},${hospital.longitude}?q=${hospital.latitude},${hospital.longitude}(${Uri.encodeComponent(hospital.name)})',
-      );
-    } else {
-      targetUri = Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent('${hospital.name} ${hospital.address}')}',
-      );
-    }
+    final destination = hospital.hasCoordinates
+        ? '${hospital.latitude},${hospital.longitude}'
+        : Uri.encodeComponent('${hospital.name}, ${hospital.address}, Palghar');
+
+    final googleMapsDirUri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$destination',
+    );
+    final geoUri = hospital.hasCoordinates
+        ? Uri.parse(
+            'geo:${hospital.latitude},${hospital.longitude}?q=${hospital.latitude},${hospital.longitude}(${Uri.encodeComponent(hospital.name)})',
+          )
+        : null;
 
     try {
-      final launched = await launchUrl(targetUri, mode: LaunchMode.externalApplication);
+      bool launched = false;
+      // 1. Try Google Maps turn-by-turn navigation intent
+      if (await canLaunchUrl(googleMapsDirUri)) {
+        launched = await launchUrl(googleMapsDirUri, mode: LaunchMode.externalApplication);
+      }
+      // 2. Fall back to geo: URI if available
+      if (!launched && geoUri != null && await canLaunchUrl(geoUri)) {
+        launched = await launchUrl(geoUri, mode: LaunchMode.externalApplication);
+      }
+      // 3. Fall back to standard web launcher
       if (!launched) {
-        // Fallback to web search
-        final webFallback = Uri.parse(
-          'https://www.google.com/maps/search/?api=1&query=${hospital.hasCoordinates ? '${hospital.latitude},${hospital.longitude}' : Uri.encodeComponent('${hospital.name} ${hospital.address}')}',
-        );
-        await launchUrl(webFallback, mode: LaunchMode.externalApplication);
+        launched = await launchUrl(googleMapsDirUri);
+      }
+      if (!launched && context.mounted) {
+        await copyAddress(context, '${hospital.name}, ${hospital.address}');
       }
     } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not open external navigation application.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      try {
+        await launchUrl(googleMapsDirUri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not open navigation application. Address copied to clipboard.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          await copyAddress(context, '${hospital.name}, ${hospital.address}');
+        }
       }
     }
   }

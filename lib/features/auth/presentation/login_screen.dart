@@ -103,7 +103,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: AppDimensions.spaceXS),
                 Text(
-                  AppStrings.loginSubtitle,
+                  'Sign in to your Donor or Hospital account to manage emergency blood requests',
                   style: AppTypography.bodyMedium.copyWith(
                     color: AppColors.lightTextSecondary,
                   ),

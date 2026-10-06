@@ -90,11 +90,14 @@ service cloud.firestore {
                       && request.resource.data.status == 'active'
                       && request.auth.uid != get(/databases/$(database)/documents/emergency_requests/$(requestId)).data.requesterUid;
 
-        // Donors can only update their own response (e.g., withdraw)
+        // Donors can update their own response (e.g., withdraw), or the hospital requester can select the donor
         allow update: if isAuthenticated()
-                      && resource.data.donorUid == request.auth.uid
-                      && request.resource.data.donorUid == resource.data.donorUid
-                      && request.resource.data.requestId == resource.data.requestId;
+                      && (
+                        (resource.data.donorUid == request.auth.uid
+                         && request.resource.data.donorUid == resource.data.donorUid
+                         && request.resource.data.requestId == resource.data.requestId)
+                        || (request.auth.uid == get(/databases/$(database)/documents/emergency_requests/$(requestId)).data.requesterUid)
+                      );
 
         // Responses should not be hard-deleted; withdraw instead
         allow delete: if false;

@@ -15,6 +15,8 @@ class BloodRequestCard extends StatelessWidget {
   final String patientCaseId;
   final VoidCallback? onRespondTap;
   final VoidCallback? onTap;
+  final String actionLabel;
+  final Color? actionColor;
 
   const BloodRequestCard({
     super.key,
@@ -26,6 +28,8 @@ class BloodRequestCard extends StatelessWidget {
     required this.patientCaseId,
     this.onRespondTap,
     this.onTap,
+    this.actionLabel = 'Respond',
+    this.actionColor,
   });
 
   StatusType _getUrgencyStatusType() {
@@ -101,7 +105,7 @@ class BloodRequestCard extends StatelessWidget {
               const SizedBox(width: 8),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryRed,
+                  backgroundColor: actionColor ?? AppColors.primaryRed,
                   foregroundColor: Colors.white,
                   minimumSize: const Size(100, 36),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -111,7 +115,7 @@ class BloodRequestCard extends StatelessWidget {
                 ),
                 onPressed: onRespondTap ?? onTap,
                 child: Text(
-                  'Respond',
+                  actionLabel,
                   style: AppTypography.labelLarge.copyWith(color: Colors.white),
                 ),
               ),

@@ -7,6 +7,10 @@ class UserModel {
   final String phone;
   final String bloodGroup;
   final String city;
+  final String userType; // 'donor' | 'hospital'
+  final String? hospitalName;
+  final String? licenseNumber;
+  final String? address;
   final bool isDonorAvailable;
   final bool isVerified;
   final DateTime? createdAt;
@@ -18,14 +22,21 @@ class UserModel {
     required this.fullName,
     required this.email,
     required this.phone,
-    required this.bloodGroup,
+    this.bloodGroup = '',
     this.city = '',
+    this.userType = 'donor',
+    this.hospitalName,
+    this.licenseNumber,
+    this.address,
     this.isDonorAvailable = false,
     this.isVerified = false,
     this.createdAt,
     this.donationsCount = 0,
     this.livesSaved = 0,
   });
+
+  bool get isHospital => userType.toLowerCase() == 'hospital';
+  bool get isDonor => !isHospital;
 
   Map<String, dynamic> toMap() {
     return {
@@ -35,6 +46,10 @@ class UserModel {
       'phone': phone,
       'bloodGroup': bloodGroup,
       'city': city,
+      'userType': userType,
+      if (hospitalName != null) 'hospitalName': hospitalName,
+      if (licenseNumber != null) 'licenseNumber': licenseNumber,
+      if (address != null) 'address': address,
       'isDonorAvailable': isDonorAvailable,
       'isVerified': isVerified,
       'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : FieldValue.serverTimestamp(),
@@ -57,6 +72,10 @@ class UserModel {
       phone: map['phone'] as String? ?? '',
       bloodGroup: map['bloodGroup'] as String? ?? '',
       city: map['city'] as String? ?? '',
+      userType: map['userType'] as String? ?? 'donor',
+      hospitalName: map['hospitalName'] as String?,
+      licenseNumber: map['licenseNumber'] as String?,
+      address: map['address'] as String?,
       isDonorAvailable: map['isDonorAvailable'] as bool? ?? false,
       isVerified: map['isVerified'] as bool? ?? false,
       createdAt: parseDate(map['createdAt']),
@@ -77,6 +96,10 @@ class UserModel {
     String? phone,
     String? bloodGroup,
     String? city,
+    String? userType,
+    String? hospitalName,
+    String? licenseNumber,
+    String? address,
     bool? isDonorAvailable,
     bool? isVerified,
     DateTime? createdAt,
@@ -90,6 +113,10 @@ class UserModel {
       phone: phone ?? this.phone,
       bloodGroup: bloodGroup ?? this.bloodGroup,
       city: city ?? this.city,
+      userType: userType ?? this.userType,
+      hospitalName: hospitalName ?? this.hospitalName,
+      licenseNumber: licenseNumber ?? this.licenseNumber,
+      address: address ?? this.address,
       isDonorAvailable: isDonorAvailable ?? this.isDonorAvailable,
       isVerified: isVerified ?? this.isVerified,
       createdAt: createdAt ?? this.createdAt,
